@@ -43,7 +43,8 @@ jobs:
           mkdir -p "$diagnostics"
           git rev-parse HEAD | tee "$diagnostics/source.txt"
           bazel --version | tee "$diagnostics/bazel-version.txt"
-          bazel \
+          # Keep the Linux PATH literal when Git Bash invokes native Bazel.
+          MSYS2_ARG_CONV_EXCL=--action_env= bazel \
             --bazelrc="$GITHUB_WORKSPACE/.github/workflows/ci.bazelrc" \
             --bazelrc=.bazelrc \
             --noexperimental_remote_repo_contents_cache \
@@ -52,6 +53,7 @@ jobs:
             --repo_contents_cache= \
             --jobs=100 \
             --test_tag_filters=-thin_lto_feature \
+            --action_env=PATH=/usr/bin:/bin:/usr/sbin:/sbin \
             --include_commandline \
             --output=textproto \
             'mnemonic("TestRunner|Symlink", deps(//:glibc_merged_libraries_compat_test))' \
@@ -62,7 +64,9 @@ jobs:
         run: |
           diagnostics="$(cygpath -u "$RUNNER_TEMP")/windows-exec-test"
           mkdir -p "$diagnostics"
-          bazel \
+          # Both revisions otherwise send the Windows host PATH to Linux.
+          # https://github.com/bazelbuild/bazel/issues/28065
+          MSYS2_ARG_CONV_EXCL=--action_env= bazel \
             --bazelrc="$GITHUB_WORKSPACE/.github/workflows/ci.bazelrc" \
             --bazelrc=.bazelrc \
             --noexperimental_remote_repo_contents_cache \
@@ -71,6 +75,7 @@ jobs:
             --repo_contents_cache= \
             --jobs=100 \
             --test_tag_filters=-thin_lto_feature \
+            --action_env=PATH=/usr/bin:/bin:/usr/sbin:/sbin \
             --test_output=all \
             --verbose_failures \
             --execution_log_json_file="$(cygpath -w "$diagnostics/execution.json")" \
