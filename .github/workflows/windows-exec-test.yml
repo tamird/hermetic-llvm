@@ -1,0 +1,89 @@
+name: Windows exec_test diagnosis
+
+on:
+  push:
+    branches: [ci/windows-exec-test]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    if: github.repository == 'tamird/hermetic-llvm'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - revision: base
+            source: 3b04c07ed7a95d5c9c1c4a8930efbdf5bac186da
+          - revision: head
+            source: e1cdb89f2f72cfc4b78c0a683c26ff58c1a8a1a6
+    env:
+      # The failing windows-latest job resolved "latest" to this version.
+      USE_BAZEL_VERSION: 9.3.0
+    defaults:
+      run:
+        shell: bash
+        working-directory: e2e/rules_cc
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        id: checkout
+        with:
+          ref: ${{ matrix.source }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/buildbuddy-api-key
+        id: buildbuddy
+
+      - name: Capture the configured test actions
+        run: |
+          diagnostics="$(cygpath -u "$RUNNER_TEMP")/windows-exec-test"
+          mkdir -p "$diagnostics"
+          git rev-parse HEAD | tee "$diagnostics/source.txt"
+          bazel --version | tee "$diagnostics/bazel-version.txt"
+          bazel \
+            --bazelrc="$GITHUB_WORKSPACE/.github/workflows/ci.bazelrc" \
+            --bazelrc=.bazelrc \
+            --noexperimental_remote_repo_contents_cache \
+            aquery \
+            --repository_cache= \
+            --repo_contents_cache= \
+            --jobs=100 \
+            --test_tag_filters=-thin_lto_feature \
+            --include_commandline \
+            --output=textproto \
+            'mnemonic("TestRunner|Symlink", deps(//:glibc_merged_libraries_compat_test))' \
+            > "$diagnostics/actions.textproto" 2> "$diagnostics/aquery.log"
+
+      - name: Run the single native test
+        if: always() && steps.checkout.outcome == 'success' && steps.buildbuddy.outcome == 'success'
+        run: |
+          diagnostics="$(cygpath -u "$RUNNER_TEMP")/windows-exec-test"
+          mkdir -p "$diagnostics"
+          bazel \
+            --bazelrc="$GITHUB_WORKSPACE/.github/workflows/ci.bazelrc" \
+            --bazelrc=.bazelrc \
+            --noexperimental_remote_repo_contents_cache \
+            test \
+            --repository_cache= \
+            --repo_contents_cache= \
+            --jobs=100 \
+            --test_tag_filters=-thin_lto_feature \
+            --test_output=all \
+            --verbose_failures \
+            --execution_log_json_file="$(cygpath -w "$diagnostics/execution.json")" \
+            //:glibc_merged_libraries_compat_test \
+            2>&1 | tee "$diagnostics/test-output.log"
+
+      - name: Retain diagnostic and native test files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-exec-test-${{ matrix.revision }}
+          path: |
+            ${{ runner.temp }}/windows-exec-test/
+            e2e/rules_cc/bazel-testlogs/glibc_merged_libraries_compat_test/**/test.log
+            e2e/rules_cc/bazel-testlogs/glibc_merged_libraries_compat_test/**/test.xml
+          retention-days: 7
