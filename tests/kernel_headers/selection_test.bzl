@@ -4,8 +4,8 @@ load("@bazel_lib//lib:transitions.bzl", "platform_transition_test")
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def _selected_headers_test_impl(ctx):
     env = unittest.begin(ctx)
