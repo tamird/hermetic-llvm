@@ -69,6 +69,7 @@ def kernel_headers_selection_tests(default_gnu_version, default_musl_version):
                 binary = name + "_" + kind,
                 target_platform = platform,
             )
+
             # The artifacts use the selected libc/kernel platform; their test
             # runner uses the host execution platform, as in linux_linking.
             exec_test(
