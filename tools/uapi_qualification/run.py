@@ -215,8 +215,19 @@ def main() -> int:
                             actions.append(action)
                 report.write_json(evidence / (context + "-compile-actions.json"), actions)
                 wanted = {package + name + "_compile" for name in ("gnu", "musl", "unconstrained", "explicit_gnu", "explicit_musl")}
-                if {row["targetLabel"] for row in actions} != wanted or len(actions) != 5:
-                    raise ValueError("Missing or duplicate native fixture compile action")
+                if {row["targetLabel"] for row in actions} != wanted:
+                    raise ValueError("Missing native fixture compile owner")
+                for label in wanted:
+                    owned = [row for row in actions if row["targetLabel"] == label]
+                    outputs = []
+                    for row in owned:
+                        args = row["commandArgs"]
+                        output, = [args[i + 1] for i, arg in enumerate(args) if arg == "-o"]
+                        if not output.endswith(".o"):
+                            raise ValueError("Expected a compiled object output")
+                        outputs.append(output)
+                    if len(owned) not in (1, 2) or len(set(outputs)) != len(outputs):
+                        raise ValueError("Expected distinct static/PIC object actions per compile owner")
                 for action in actions:
                     if action["exitCode"] or action["status"] or not action["remotable"]:
                         raise ValueError("Fixture compile failed or is not remotable")
