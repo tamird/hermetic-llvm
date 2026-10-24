@@ -1,0 +1,6 @@
+load("@llvm//tests/kernel_headers:selection_test.bzl", "kernel_headers_selection_tests")
+
+kernel_headers_selection_tests(
+    default_gnu_version = "6.6.90",
+    default_musl_version = "6.6.90",
+)
