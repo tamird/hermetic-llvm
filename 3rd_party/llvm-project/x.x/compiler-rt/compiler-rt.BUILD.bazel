@@ -1484,6 +1484,10 @@ cc_unsanitized_library(
     copts = _INTERNAL_SYMBOLIZER_COPTS,
     cxxopts = _INTERNAL_SYMBOLIZER_CXXOPTS,
     dep = ":sanitizer_common_symbolizer_internal_impl",
+    # The symbolizer and its LLVM dependencies must produce full-LTO bitcode
+    # for cc_internal_symbolizer_object's single-module link. Disable ThinLTO
+    # on this dependency graph so application code can keep using ThinLTO.
+    disable_thin_lto = True,
     disable_zstd = True,
     platform = select(_INTERNAL_SYMBOLIZER_PLATFORMS),
 )
