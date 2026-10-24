@@ -55,10 +55,15 @@ def kernel_headers_selection_tests(default_gnu_version, default_musl_version):
             version = version,
             tags = ["manual"],
         )
+
+        # Generated version codes cap the patch number even when the header's
+        # KERNEL_VERSION macro predates that clamp. Check the full path above.
+        major, minor, patch = version.split(".")
+        c_version = ",".join([major, minor, str(min(int(patch), 255))])
         cc_test(
             name = name + "_compile",
             srcs = [Label("//tests/kernel_headers:version_test.c")],
-            defines = ["EXPECTED_KERNEL_VERSION=KERNEL_VERSION({})".format(version.replace(".", ","))],
+            defines = ["EXPECTED_KERNEL_VERSION=KERNEL_VERSION({})".format(c_version)],
             tags = ["manual"],
             deps = [Label("@kernel_headers//:kernel_headers")],
         )
