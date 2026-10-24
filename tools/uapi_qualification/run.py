@@ -172,6 +172,17 @@ def main() -> int:
                 print(json.dumps({"phase": directory.name, "native_exit": native, "status": verdict["status"]}), flush=True)
             if verdict["status"] != "PASS":
                 raise RuntimeError("Qualification phase did not pass: " + directory.name)
+            if kind == "test":
+                expected = {(row["label"], row["configuration"]) for row in verdict["expected"]}
+                attempts = verdict["executed"]
+                if len(attempts) != len(expected) or {
+                        (row["owner"]["label"], row["owner"]["configuration"]) for row in attempts} != expected:
+                    raise ValueError("Test attempts differ from exact configured owners")
+                for row in attempts:
+                    if (row["status"] != "PASSED" or (row["run"], row["shard"], row["attempt"]) != (1, 1, 1)
+                            or row["cached_locally"] or row["execution_info"].get("cachedRemotely", False)
+                            or row["execution_info"].get("strategy") != "local"):
+                        raise ValueError("Expected one actual uncached local test execution per owner")
             return verdict
 
         completed = False
