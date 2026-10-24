@@ -1,11 +1,14 @@
 """Exercise the public header aliases in configured and unconfigured modules."""
 
-load("@bazel_lib//lib:transitions.bzl", "platform_transition_test")
+load("@bazel_lib//lib:transitions.bzl", "platform_transition_binary")
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
+load("@kernel_headers//:linux_kernel_version_map.bzl", "LINUX_KERNEL_VERSION_MAP")
+load("@llvm//:defs.bzl", "exec_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 def _selected_headers_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -39,8 +42,8 @@ def kernel_headers_selection_tests(default_gnu_version, default_musl_version):
         ("gnu", ["@llvm//constraints/libc:gnu.2.28"], default_gnu_version),
         ("musl", ["@llvm//constraints/libc:musl"], default_musl_version),
         ("unconstrained", [], default_gnu_version),
-        ("explicit_gnu", ["@llvm//constraints/libc:gnu.2.28", "@llvm//constraints/kernel/linux:5.4"], "5.4.293"),
-        ("explicit_musl", ["@llvm//constraints/libc:musl", "@llvm//constraints/kernel/linux:5.4"], "5.4.293"),
+        ("explicit_gnu", ["@llvm//constraints/libc:gnu.2.28", "@llvm//constraints/kernel/linux:5.4"], LINUX_KERNEL_VERSION_MAP["5.4"]),
+        ("explicit_musl", ["@llvm//constraints/libc:musl", "@llvm//constraints/kernel/linux:5.4"], LINUX_KERNEL_VERSION_MAP["5.4"]),
     ]:
         platform = name + "_header_platform"
         native.platform(
@@ -60,9 +63,19 @@ def kernel_headers_selection_tests(default_gnu_version, default_musl_version):
             deps = [Label("@kernel_headers//:kernel_headers")],
         )
         for kind in ("selection", "compile"):
-            platform_transition_test(
-                name = name + "_" + kind + "_test",
+            binary = name + "_" + kind + "_binary"
+            platform_transition_binary(
+                name = binary,
                 binary = name + "_" + kind,
                 target_platform = platform,
+            )
+            # The artifacts use the selected libc/kernel platform; their test
+            # runner uses the host execution platform, as in linux_linking.
+            exec_test(
+                sh_test,
+                name = name + "_" + kind + "_test",
+                srcs = [Label("//tests/kernel_headers:run_binary.sh")],
+                args = ["$(rootpath :" + binary + ")"],
+                data = [binary],
                 target_compatible_with = ["@platforms//os:linux"],
             )

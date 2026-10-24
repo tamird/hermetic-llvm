@@ -2,6 +2,7 @@ load(":kernel_headers_test.bzl", "linux_kernel_archs_by_version_test")
 load(":selection_test.bzl", "kernel_headers_selection_tests")
 
 exports_files([
+    "run_binary.sh",
     "selection_test.bzl",
     "version_test.c",
 ])
