@@ -66,6 +66,7 @@ def kernel_headers_selection_tests(default_gnu_version, default_musl_version):
             binary = name + "_" + kind + "_binary"
             platform_transition_binary(
                 name = binary,
+                testonly = True,
                 binary = name + "_" + kind,
                 target_platform = platform,
             )
