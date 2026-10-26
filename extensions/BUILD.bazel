@@ -15,6 +15,7 @@ bzl_library(
         "//private:llvm_project_archive",
         "//private:llvm_project_from_git",
         "//private:llvm_project_from_path",
+        "//private:llvm_targets",
         "@bazel_skylib//lib:structs",
         "@bazel_tools//tools/build_defs/repo:http.bzl",
     ],

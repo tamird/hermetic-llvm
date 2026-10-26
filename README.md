@@ -347,6 +347,17 @@ llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
 use_repo(llvm, "llvm-project")
 ```
 
+By default, the source build includes the backends selected by this module.
+A root module that only needs some backends can replace those defaults:
+
+```starlark
+llvm.default_targets(targets = ["AArch64", "X86"])
+```
+
+Any module can call `llvm.configure(targets = [...])` to require additional
+backends. Those requests are always included. A dependency's own
+`llvm.default_targets(...)` only takes effect when it is the root module.
+
 Then consume LLVM and runtime targets from `@llvm-project` in BUILD files:
 
 ```starlark

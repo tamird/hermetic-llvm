@@ -39,7 +39,7 @@ LLVM_VERSION = "23.1.2"
 
 llvm = use_extension("//extensions:llvm.bzl", "llvm")
 llvm.version(llvm_version = LLVM_VERSION)
-llvm.configure(
+llvm.default_targets(
     targets = [
         "AArch64",
         "AMDGPU",
