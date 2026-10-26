@@ -38,3 +38,12 @@ bzl_library(
     visibility = ["//extensions:__pkg__"],
     deps = [":llvm_project_common"],
 )
+
+bzl_library(
+    name = "llvm_targets",
+    srcs = ["llvm_targets.bzl"],
+    visibility = [
+        "//extensions:__pkg__",
+        "//tests/llvm_targets:__pkg__",
+    ],
+)

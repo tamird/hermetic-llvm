@@ -1,7 +1,10 @@
+"""Configure the shared LLVM source repository and its version."""
+
 load("@bazel_skylib//lib:structs.bzl", "structs")
 load("//private:llvm_project_archive.bzl", "llvm_project_archive")
 load("//private:llvm_project_from_git.bzl", "llvm_project_from_git")
 load("//private:llvm_project_from_path.bzl", "llvm_project_from_path")
+load("//private:llvm_targets.bzl", "llvm_targets")
 
 _DEFAULT_LLVM_VERSIONS_INDEX_FILE = "//:llvm_versions.json"
 
@@ -215,14 +218,6 @@ def _get_llvm_version_index(mctx):
         fail("Invalid llvm version index in '{}': expected top-level dict".format(_DEFAULT_LLVM_VERSIONS_INDEX_FILE))
     return decoded
 
-def _get_llvm_targets(mctx):
-    targets = {}
-    for module in mctx.modules:
-        for configure in module.tags.configure:
-            for target in configure.targets:
-                targets[target] = None
-    return targets.keys()
-
 def _llvm_impl(mctx):
     llvm_version = _get_llvm_version(mctx)
     llvm_version_index = _get_llvm_version_index(mctx)
@@ -231,7 +226,7 @@ def _llvm_impl(mctx):
         name = "llvm_version",
         llvm_version = llvm_version,
     )
-    _create_llvm_project_repository(mctx, llvm_version, llvm_version_index, _get_llvm_targets(mctx))
+    _create_llvm_project_repository(mctx, llvm_version, llvm_version_index, llvm_targets(mctx.modules))
 
     root_deps = _root_direct_deps(mctx)
     return mctx.extension_metadata(
@@ -246,10 +241,16 @@ _version_tag = tag_class(
     },
 )
 
+_targets_attrs = {"targets": attr.string_list(mandatory = True)}
+
 _configure_tag = tag_class(
-    attrs = {
-        "targets": attr.string_list(mandatory = True),
-    },
+    attrs = _targets_attrs,
+    doc = "Add required LLVM backends to the shared source repository.",
+)
+
+_default_targets_tag = tag_class(
+    attrs = _targets_attrs,
+    doc = "Set the default LLVM backends when this module is the root.",
 )
 
 _from_path_tag = tag_class(
@@ -310,6 +311,7 @@ llvm = module_extension(
     implementation = _llvm_impl,
     tag_classes = {
         "configure": _configure_tag,
+        "default_targets": _default_targets_tag,
         "version": _version_tag,
         "from_path": _from_path_tag,
         "from_git": _from_git_tag,

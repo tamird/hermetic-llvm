@@ -1,0 +1,3 @@
+load(":llvm_targets_test.bzl", "llvm_targets_test")
+
+llvm_targets_test(name = "llvm_targets_test")
