@@ -7,10 +7,20 @@ local_path_override(
     path = "../..",
 )
 
+bazel_dep(name = "gpu_consumer", version = "")
+local_path_override(
+    module_name = "gpu_consumer",
+    path = "gpu_consumer",
+)
+
 LLVM_VERSION = "21.1.8"
 
 llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
 llvm.version(llvm_version = LLVM_VERSION)
+llvm.configure(targets = [
+    "AArch64",
+    "X86",
+])
 use_repo(llvm, "llvm-project")
 
 toolchain = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")

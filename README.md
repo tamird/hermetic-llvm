@@ -356,14 +356,25 @@ This module exposes LLVM and runtime projects as first-class Bazel packages, so 
 
 ### Consume via `use_extension(...)`
 
-Add this to your `MODULE.bazel`:
+Once your `MODULE.bazel` depends on `llvm`, import its source repository:
 
 ```starlark
-bazel_dep(name = "llvm", version = "0.3.1")
-
 llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
 use_repo(llvm, "llvm-project")
 ```
+
+To select the code generators built into LLVM, list the backends your
+project needs in its `MODULE.bazel`:
+
+```starlark
+llvm.configure(targets = ["AArch64", "X86"])
+```
+
+The root module's list replaces LLVM's default backends. Dependencies
+always add the targets they request: if a dependency needs BPF, this
+example builds AArch64, X86, and BPF. Omit `llvm.configure` in the root
+to keep the default backends, or use `llvm.configure(targets = [])` to
+build only the backends requested by dependencies.
 
 Then consume LLVM and runtime targets from `@llvm-project` in BUILD files:
 
