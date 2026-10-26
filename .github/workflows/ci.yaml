@@ -361,6 +361,8 @@ jobs:
         working-directory: e2e/llvm_version_selection
         shell: bash
         run: |
+          bazel --bazelrc=/dev/null mod show_repo @llvm-project --lockfile_mode=off |
+            grep -F 'targets = ["AArch64", "X86", "AMDGPU"]'
           bazel --bazelrc=/dev/null build --nobuild //:hello --lockfile_mode=off
           resource_dir="$(bazel --bazelrc=/dev/null cquery @llvm//:builtin_resource_dir --output=files --lockfile_mode=off)"
           expected_suffix="/lib/clang/${LLVM_VERSION%%.*}"

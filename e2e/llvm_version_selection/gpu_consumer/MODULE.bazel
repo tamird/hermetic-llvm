@@ -1,0 +1,6 @@
+module(name = "gpu_consumer")
+
+bazel_dep(name = "llvm", version = "")
+
+llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+llvm.backends(targets = ["AMDGPU"])

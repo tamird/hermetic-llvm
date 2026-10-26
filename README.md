@@ -365,6 +365,19 @@ llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
 use_repo(llvm, "llvm-project")
 ```
 
+To build only the LLVM backends your project uses, declare them in
+`MODULE.bazel`:
+
+```starlark
+llvm.backends(targets = ["AArch64", "X86"])
+```
+
+Bazel builds the union of all modules' backend requirements. For example,
+if a dependency requests BPF, this build includes AArch64, X86, and BPF.
+If the root module does not declare its backends, the build includes
+LLVM's default backends. Use `llvm.configure(targets = [...])` to add
+backends to those defaults.
+
 Then consume LLVM and runtime targets from `@llvm-project` in BUILD files:
 
 ```starlark

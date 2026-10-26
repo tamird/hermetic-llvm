@@ -5,6 +5,18 @@ load("//private:llvm_project_from_path.bzl", "llvm_project_from_path")
 
 _DEFAULT_LLVM_VERSIONS_INDEX_FILE = "//:llvm_versions.json"
 
+_DEFAULT_TARGETS = [
+    "AArch64",
+    "AMDGPU",
+    "ARM",
+    "BPF",
+    "NVPTX",
+    "RISCV",
+    "SystemZ",
+    "WebAssembly",
+    "X86",
+]
+
 _DEFAULT_SOURCE_PATCHES = [
     "//3rd_party/llvm-project/x.x/patches:llvm-mimalloc.patch",
     "//3rd_party/llvm-project/x.x/patches:llvm-musl-stack-size.patch",
@@ -216,10 +228,16 @@ def _get_llvm_version_index(mctx):
     return decoded
 
 def _get_llvm_targets(mctx):
+    use_defaults = not getattr(mctx, "is_isolated", False)
     targets = {}
     for module in mctx.modules:
-        for configure in module.tags.configure:
-            for target in configure.targets:
+        # Bazel visits the root first, if it uses the extension.
+        if module.is_root and module.tags.backends:
+            use_defaults = False
+        if use_defaults and module.name == "llvm":
+            targets.update({target: None for target in _DEFAULT_TARGETS})
+        for tag in module.tags.configure + module.tags.backends:
+            for target in tag.targets:
                 targets[target] = None
     return targets.keys()
 
@@ -309,6 +327,7 @@ _from_archive_tag = tag_class(
 llvm = module_extension(
     implementation = _llvm_impl,
     tag_classes = {
+        "backends": _configure_tag,
         "configure": _configure_tag,
         "version": _version_tag,
         "from_path": _from_path_tag,
