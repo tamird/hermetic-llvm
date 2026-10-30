@@ -1,5 +1,4 @@
-load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo", "bool_flag", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo", "bool_flag", "bool_setting", "string_flag")
 
 OPTIMIZATION_MODES = [
     "debug",
@@ -38,6 +37,7 @@ def _is_exec_configuration(ctx):
     return ctx.genfiles_dir.path.find("-exec") != -1
 
 def _target_bool_flag_impl(ctx):
+    # type: (...) -> list[FeatureFlagInfo]
     value = str(ctx.attr.setting[BuildSettingInfo].value).lower()
     if _is_exec_configuration(ctx):
         value = "false"
@@ -51,6 +51,7 @@ _target_bool_flag = rule(
 )
 
 def _host_bool_flag_impl(ctx):
+    # type: (...) -> list[FeatureFlagInfo]
     value = str(ctx.attr.setting[BuildSettingInfo].value).lower()
     if not _is_exec_configuration(ctx):
         value = "false"
@@ -63,7 +64,48 @@ _host_bool_flag = rule(
     },
 )
 
+def _selected_sanitizer_bool_flag_impl(ctx):
+    # type: (...) -> list[FeatureFlagInfo]
+    setting = ctx.attr.host_setting if _is_exec_configuration(ctx) else ctx.attr.target_setting
+    return [config_common.FeatureFlagInfo(value = str(setting[BuildSettingInfo].value).lower())]
+
+_selected_sanitizer_bool_flag = rule(
+    implementation = _selected_sanitizer_bool_flag_impl,
+    attrs = {
+        "host_setting": attr.label(mandatory = True),
+        "target_setting": attr.label(mandatory = True),
+    },
+)
+
+def _bazel_fdo_instrument_requested_transition_impl(settings, _attr):
+    # type: (Mapping[str, object], object) -> dict[str, bool]
+    requested = settings["//command_line_option:fdo_instrument"] or settings["//command_line_option:cs_fdo_instrument"]
+    return {"//config:bazel_fdo_instrument_requested": bool(requested)}
+
+_bazel_fdo_instrument_requested_transition = transition(
+    implementation = _bazel_fdo_instrument_requested_transition_impl,
+    inputs = ["//command_line_option:fdo_instrument", "//command_line_option:cs_fdo_instrument"],
+    outputs = ["//config:bazel_fdo_instrument_requested"],
+)
+
+def _bazel_fdo_instrument_requested_config_impl(ctx):
+    # type: (...) -> list[FeatureFlagInfo]
+    requested = ctx.attr._requested[0][BuildSettingInfo].value
+    return [config_common.FeatureFlagInfo(value = "true" if requested else "false")]
+
+_bazel_fdo_instrument_requested_config = rule(
+    doc = "\"true\" when --fdo_instrument or --cs_fdo_instrument is set, else \"false\".",
+    implementation = _bazel_fdo_instrument_requested_config_impl,
+    attrs = {
+        "_requested": attr.label(
+            default = "//config:bazel_fdo_instrument_requested",
+            cfg = _bazel_fdo_instrument_requested_transition,
+        ),
+    },
+)
+
 def _declare_sanitizer_config_setting(sanitizer):
+    # type: (str) -> None
     target_setting_name = "target_" + sanitizer
     target_feature_name = sanitizer + "_target_config"
     target_config_setting = target_setting_name + "_enabled"
@@ -93,15 +135,21 @@ def _declare_sanitizer_config_setting(sanitizer):
         },
     )
 
-    selects.config_setting_group(
+    # Keep the separate host and target predicates for direct users; common
+    # selectors need one result for this configuration.
+    selected_feature_name = sanitizer + "_selected_config"
+    _selected_sanitizer_bool_flag(
+        name = selected_feature_name,
+        host_setting = host_setting_name,
+        target_setting = sanitizer,
+    )
+    native.config_setting(
         name = sanitizer + "_enabled",
-        match_any = [
-            target_config_setting,
-            host_config_setting,
-        ],
+        flag_values = {selected_feature_name: "true"},
     )
 
 def config_settings():
+    # type: () -> None
     # This flag controls the optimization mode for the compilation of the target
     # prequisites like the standard C library, the C++ standard library,
     # the unwinder, etc.
@@ -181,3 +229,26 @@ def config_settings():
             build_setting_default = False,
         )
         _declare_sanitizer_config_setting(sanitizer)
+
+    # This config setting matches when --fdo_instrument or --cs_fdo_instrument
+    # is set, so the profile runtime can be staged for the link.
+    #
+    # Both flags take an arbitrary path, which no config_setting can match.
+    # Instead, a transition on :bazel_fdo_instrument_requested_config copies "either
+    # flag is set" into :bazel_fdo_instrument_requested, and
+    # :bazel_fdo_instrument_requested_config reports it back as a feature flag.
+    bool_setting(
+        name = "bazel_fdo_instrument_requested",
+        build_setting_default = False,
+        visibility = ["//visibility:private"],
+    )
+    _bazel_fdo_instrument_requested_config(
+        name = "bazel_fdo_instrument_requested_config",
+        visibility = ["//visibility:private"],
+    )
+    native.config_setting(
+        name = "bazel_fdo_instrument_enabled",
+        flag_values = {
+            ":bazel_fdo_instrument_requested_config": "true",
+        },
+    )

@@ -9,6 +9,7 @@ _VALIDATE_STATIC_LIBRARY_TOOL = {
 } if bazel_features.cc.supports_starlarkified_toolchains else {}
 
 def declare_llvm_targets(*, suffix = ""):
+    # type: (str) -> None
     """Declares the Bazel interface of one installed LLVM distribution.
 
     The bin/* tools and lib/clang/* resource headers below come from the same
@@ -105,6 +106,17 @@ def declare_llvm_targets(*, suffix = ""):
         format = {"llvm_nm": "bin/llvm-nm" + suffix},
     )
 
+    cc_tool(
+        name = "mingw_def_file_generator",
+        src = "@llvm//tools/def_file_generator",
+        data = ["bin/llvm-nm" + suffix],
+        env = {
+            "DEF_FILE_GENERATOR_ABI": "gnu",
+            "LLVM_NM": "{llvm_nm}",
+        },
+        format = {"llvm_nm": "bin/llvm-nm" + suffix},
+    )
+
     TOOLS_WITHOUT_LINKER = {
         "@rules_cc//cc/toolchains/actions:assembly_actions": ":clang",
         "@rules_cc//cc/toolchains/actions:c_compile": ":clang",
@@ -149,7 +161,7 @@ def declare_llvm_targets(*, suffix = ""):
         "@rules_cc//cc/toolchains/actions:lto_backend": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:preprocess_assemble": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_header_parsing": ":clang-cl",
-        "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-lib",
         "@rules_cc//cc/toolchains/actions:cpp_link_executable": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_link_dynamic_library": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_link_nodeps_dynamic_library": ":clang-cl",
@@ -224,6 +236,24 @@ def declare_llvm_targets(*, suffix = ""):
         name = "default_tools_for_runtime",
         actual = select({
             "@llvm//toolchain:runtimes_all": ":default_tools",
+            "//conditions:default": ":staged_default_tools",
+        }),
+        visibility = ["//visibility:public"],
+    )
+
+    cc_tool_map(
+        name = "tools_for_mingw",
+        tools = BASE_TOOLS | COMPLETE_ONLY_TOOLS | {
+            "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
+            "@rules_cc//cc/toolchains/actions:generate_def_file": ":mingw_def_file_generator",
+        },
+        visibility = ["//visibility:public"],
+    )
+
+    native.alias(
+        name = "tools_for_mingw_for_runtime",
+        actual = select({
+            "@llvm//toolchain:runtimes_all": ":tools_for_mingw",
             "//conditions:default": ":staged_default_tools",
         }),
         visibility = ["//visibility:public"],
@@ -381,6 +411,13 @@ def declare_llvm_targets(*, suffix = ""):
     cc_tool(
         name = "llvm-ar",
         src = "bin/llvm-ar" + suffix,
+    )
+
+    cc_tool(
+        name = "llvm-lib",
+        src = "bin/llvm-lib" + suffix,
+        # Input lookup must not fall back to ambient Visual Studio libraries.
+        env = {"LIB": "__hermetic_llvm_empty_lib__"},
     )
 
     cc_tool(

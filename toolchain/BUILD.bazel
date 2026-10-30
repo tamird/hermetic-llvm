@@ -404,9 +404,9 @@ cc_args_list(
         ":sysroot_flags",
         ":hermetic_compile_flags",
 
-        # Keep external -isystem directories before the toolchain C and C++
-        # -isystem directories below.
-        "@rules_cc//cc/toolchains/args/external_include_paths:external_include_paths",
+        # Keep external system include directories before the toolchain C and
+        # C++ system include directories below.
+        ":windows_external_include_paths",
 
         # Windows compiler, ABI, CRT, object-format, and C++ runtime semantics.
         "//toolchain/args/windows:crt_compile_defines",
@@ -447,6 +447,15 @@ cc_args_list(
         "//toolchain/args/windows:crt_linkage_args",
         "//toolchain/args/windows:ignore_unused_command_line_argument",
     ],
+)
+
+cc_args_list(
+    name = "windows_external_include_paths",
+    args = select({
+        "//constraints/windows/abi:msvc": ["//toolchain/features/clang_cl:external_include_paths_args"],
+        "//conditions:default": ["@rules_cc//cc/toolchains/args/external_include_paths:external_include_paths"],
+    }),
+    visibility = ["//toolchain/runtimes:__pkg__"],
 )
 
 cc_args_list(
@@ -518,6 +527,14 @@ cc_artifact_name_pattern(
     category = "@rules_cc//cc/toolchains/artifacts:dynamic_library",
     extension = ".dll",
     prefix = "",
+    visibility = ["//visibility:public"],
+)
+
+cc_artifact_name_pattern(
+    name = "windows_mingw_dynamic_library_pattern",
+    category = "@rules_cc//cc/toolchains/artifacts:dynamic_library",
+    extension = ".dll",
+    prefix = "lib",
     visibility = ["//visibility:public"],
 )
 

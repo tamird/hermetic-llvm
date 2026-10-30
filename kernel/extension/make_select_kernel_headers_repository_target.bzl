@@ -1,5 +1,6 @@
 load(
     "@kernel_headers//:linux_kernel_version_map.bzl",
+    "DEFAULT_LINUX_KERNEL_VERSION",
     "LINUX_KERNEL_ARCHS_BY_VERSION",
     "LINUX_KERNEL_VERSION_MAP",
 )
@@ -10,24 +11,30 @@ load(":kernel_helpers.bzl", "arch_to_kernel_arch")
 load(":libc_kernel_versions.bzl", "LIBC_KERNEL_VERSIONS")
 
 def _kernel_headers_repository_target(target_arch, kernel_version, bazel_target):
+    # type: (str, str, str) -> str
     return "@linux_kernel_headers_{}.{}//:{}".format(arch_to_kernel_arch(target_arch), kernel_version, bazel_target)
 
 def _kernel_headers_available(target_arch, kernel_version):
+    # type: (str, str) -> bool
     return arch_to_kernel_arch(target_arch) in LINUX_KERNEL_ARCHS_BY_VERSION.get(kernel_version, [])
 
 def _version_alias_name(kernel_version, bazel_target):
+    # type: (str, str) -> str
     return "{}_{}".format(kernel_version, bazel_target)
 
 def _fallback_alias_name(bazel_target):
+    # type: (str) -> str
     return "libc_mapped_{}".format(bazel_target)
 
 def _linux_kernel_headers_version(kernel_version):
+    # type: (str) -> str
     if kernel_version not in LINUX_KERNEL_VERSION_MAP:
         fail("Missing Linux kernel version map entry for {}".format(kernel_version))
 
     return LINUX_KERNEL_VERSION_MAP[kernel_version]
 
 def _make_select_kernel_headers_repository_target_for_linux_kernel(kernel_version, bazel_target):
+    # type: (str, str) -> select[str]
     """Select the right kernel headers repository based on the target architecture."""
     selection = {}
     full_kernel_version = _linux_kernel_headers_version(kernel_version)
@@ -40,6 +47,7 @@ def _make_select_kernel_headers_repository_target_for_linux_kernel(kernel_versio
     return select(selection)
 
 def _declare_libc_kernel_headers_aliases(name, bazel_target):
+    # type: (str, str) -> None
     """Select the architecture before its libc-derived kernel version."""
     targets = {}
     for (target_os, target_arch) in LIBC_SUPPORTED_TARGETS:
@@ -67,7 +75,8 @@ def _declare_libc_kernel_headers_aliases(name, bazel_target):
     )
 
 def _make_select_kernel_headers_repository_target_from_linux_kernel(bazel_target):
-    """Select explicit Linux kernel constraints, falling back to the libc-derived default."""
+    # type: (str) -> select[str]
+    """Select explicit Linux kernel constraints, falling back to the configured default."""
     selection = {
         "@llvm//constraints/kernel/linux:{}".format(kernel_version): _version_alias_name(kernel_version, bazel_target)
         for kernel_version in LINUX_KERNEL_VERSIONS
@@ -77,6 +86,7 @@ def _make_select_kernel_headers_repository_target_from_linux_kernel(bazel_target
     return select(selection)
 
 def declare_kernel_headers_repository_target(name, bazel_target = None, **kwargs):
+    # type: (str, str | None, **Unpack[KeywordArgs[native.alias, 'name', 'actual']]) -> None
     """Declare a kernel headers alias that honors explicit Linux kernel constraints.
 
     Args:
@@ -87,7 +97,13 @@ def declare_kernel_headers_repository_target(name, bazel_target = None, **kwargs
     if bazel_target == None:
         bazel_target = name
 
-    _declare_libc_kernel_headers_aliases(_fallback_alias_name(name), bazel_target)
+    if DEFAULT_LINUX_KERNEL_VERSION == None:
+        _declare_libc_kernel_headers_aliases(_fallback_alias_name(name), bazel_target)
+    else:
+        native.alias(
+            name = _fallback_alias_name(name),
+            actual = _make_select_kernel_headers_repository_target_for_linux_kernel(DEFAULT_LINUX_KERNEL_VERSION, bazel_target),
+        )
 
     for kernel_version in LINUX_KERNEL_VERSIONS:
         native.alias(

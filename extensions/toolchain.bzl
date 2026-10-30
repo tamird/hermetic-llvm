@@ -17,6 +17,7 @@ declare_bootstrap_toolchains(execs = _EXECS, targets = _TARGETS)
 """
 
 def _toolchains_repository_impl(rctx):
+    # type: (...) -> repo_metadata
     rctx.file("BUILD.bazel", rctx.attr.build_file_content)
     return rctx.repo_metadata(reproducible = True)
 
@@ -28,13 +29,16 @@ _toolchains_repository = repository_rule(
 )
 
 def _format_platform_list(platforms):
+    # type: (Collection[tuple[str, str]]) -> str
     return ",\n    ".join([repr(platform) for platform in platforms])
 
 def _validate_platform_pair(kind, platform, supported):
+    # type: (str, tuple[str, str], Collection[tuple[str, str]]) -> None
     if platform not in supported:
         fail("Unsupported {} platform {}".format(kind, platform))
 
 def _toolchain_impl(mctx):
+    # type: (...) -> extension_metadata
     execs = []
     targets = []
 
@@ -62,10 +66,13 @@ def _toolchain_impl(mctx):
         ),
     )
 
+    # Report llvm_toolchains the way the root module uses the extension, so
+    # a root module can make its usage a dev_dependency.
+    dev = not mctx.root_module_has_non_dev_dependency
     return mctx.extension_metadata(
         reproducible = True,
-        root_module_direct_deps = ["llvm_toolchains"],
-        root_module_direct_dev_deps = [],
+        root_module_direct_deps = [] if dev else ["llvm_toolchains"],
+        root_module_direct_dev_deps = ["llvm_toolchains"] if dev else [],
     )
 
 _exec_platform_tag = tag_class(

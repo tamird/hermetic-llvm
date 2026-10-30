@@ -1,7 +1,22 @@
+load("@llvm//toolchain/features/msvc:validation.bzl", "validate_msvc_configuration")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@with_cfg.bzl", "with_cfg")
+
+def assert_msvc_tuple_features():
+    # type: () -> None
+    error = validate_msvc_configuration(
+        disabled_features = [],
+        enabled_features = ("tsan", "asan", "tsan"),
+        is_legacy_msvcrt = False,
+        is_libcxx = True,
+        is_msvc_abi = True,
+        unsupported_features = ["asan", "tsan"],
+    )
+    expected = "MSVC ABI Layer 1 does not support feature(s): asan, tsan"
+    if error != expected:
+        fail("expected %r, got %r" % (expected, error))
 
 _EXTERNAL_INCLUDE_PATHS_GLIBC_PLATFORM = select({
     "@platforms//cpu:aarch64": [Label("@llvm//platforms:linux_aarch64_gnu.2.34")],
@@ -9,7 +24,14 @@ _EXTERNAL_INCLUDE_PATHS_GLIBC_PLATFORM = select({
     "//conditions:default": [],
 })
 
+_GLIBC_2_17_PLATFORM = select({
+    "@platforms//cpu:aarch64": [Label("@llvm//platforms:linux_aarch64_gnu.2.17")],
+    "@platforms//cpu:x86_64": [Label("@llvm//platforms:linux_x86_64_gnu.2.17")],
+    "//conditions:default": [],
+})
+
 def _external_include_paths_glibc_headers_test_impl(ctx):
+    # type: (...) -> list[DefaultInfo]
     for header in ctx.attr.glibc_start[CcInfo].compilation_context.direct_headers:
         if header.owner.name == "bits/errno.h":
             fail("{} declares bits/errno.h in hdrs".format(ctx.attr.glibc_start.label))
@@ -49,7 +71,7 @@ external_include_paths_glibc_alias, _external_include_paths_glibc_alias_internal
 # run time; Linux links the static runtime, so nothing is added there. Callers
 # never repeat the dynamic_dep per target.
 def _with_macos_sanitizer_runtime(inner_binary, macos_runtime):
-    def _macro(name, dynamic_deps = None, **kwargs):
+    def _macro(name, dynamic_deps = None, **kwargs):  # type: (str, _DynamicDeps | None, **KeywordArgs[P]) -> None
         inner_binary(
             name = name,
             dynamic_deps = (dynamic_deps or []) + select({
@@ -249,7 +271,29 @@ profile_cc_binary, _profile_cc_binary_internal = with_cfg(cc_binary).set(
     }),
 ).build()
 
+fdo_instrument_cc_binary, _fdo_instrument_cc_binary_internal = with_cfg(cc_binary).set(
+    "fdo_instrument",
+    ".",
+).build()
+
+cs_fdo_instrument_cc_binary, _cs_fdo_instrument_cc_binary_internal = with_cfg(cc_binary).set(
+    "cs_fdo_instrument",
+    ".",
+).set(
+    "compilation_mode",
+    "opt",
+).build()
+
 opt_binary, _opt_binary_internal = with_cfg(cc_binary).set(
+    "compilation_mode",
+    "opt",
+).build()
+
+# opt enables _FORTIFY_SOURCE, whose glibc wrappers are under test.
+glibc_2_17_opt_cc_test, _glibc_2_17_opt_cc_test_internal = with_cfg(cc_test).set(
+    "platforms",
+    _GLIBC_2_17_PLATFORM,
+).set(
     "compilation_mode",
     "opt",
 ).build()
