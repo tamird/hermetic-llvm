@@ -117,6 +117,8 @@ def _glibc_static_impl(ctx):
             arguments = [args],
             inputs = inputs,
             outputs = [out],
+            # Scratch executors have no /tmp for Clang's assembly intermediates.
+            env = {"TMPDIR": out.dirname},
             mnemonic = "GlibcStaticCompile",
             progress_message = "Compiling glibc %s" % obj,
             toolchain = CC_TOOLCHAIN_TYPE,
