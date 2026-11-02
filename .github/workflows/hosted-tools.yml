@@ -1,0 +1,53 @@
+name: Linux-hosted tool qualification
+
+on:
+  push:
+    branches: [qualification/linux-hosted-tools]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.repository == 'tamird/hermetic-llvm'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            cpu: x86_64
+          - os: ubuntu-24.04-arm
+            cpu: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - name: Build and exercise each source in the native rules_cc consumer
+        env:
+          EXPECTED_CPU: ${{ matrix.cpu }}
+          USE_BAZEL_VERSION: 9.3.0rc2
+        run: |
+          cp -R .github/qualification/hosted-tools "$RUNNER_TEMP/fixture"
+          python3 "$RUNNER_TEMP/fixture/collect.py"
+      - name: Check the public receipt
+        id: scan
+        if: always()
+        shell: python
+        run: |
+          import json, os, re
+          from pathlib import Path
+          p = Path(os.environ['RUNNER_TEMP']) / 'hosted-tools.json'
+          assert p.is_file() and not p.is_symlink() and p.stat().st_size <= 131072
+          data = p.read_text()
+          obj = json.loads(data)
+          assert not re.search(r'(?i)(authorization:|bearer |x-buildbuddy-api-key|ghp_|github_pat_|-----BEGIN [A-Z ]*PRIVATE KEY)', data)
+          assert obj['carrier'] == os.environ['GITHUB_SHA']
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.scan.outcome == 'success'
+        with:
+          name: hosted-tools-${{ matrix.cpu }}
+          path: ${{ runner.temp }}/hosted-tools.json
+          if-no-files-found: error

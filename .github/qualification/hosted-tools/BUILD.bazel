@@ -1,0 +1,22 @@
+load("@llvm//:defs.bzl", "exec_test")
+load("@rules_python//python:defs.bzl", "py_test")
+
+_TOOLS = [
+    "@llvm//tools/internal:module-map-generator",
+    "@llvm//tools/internal:header-parser",
+    "@llvm//tools/internal:static-library-validator",
+    "@llvm//tools/internal:link-wrapper",
+    "@llvm//tools/def_file_generator",
+    "@llvm//tools/case_insensitive_vfs",
+    "@llvm//tools:clang++",
+    "@llvm//tools:llvm-nm",
+]
+
+exec_test(
+    py_test,
+    name = "hosted_tools",
+    srcs = ["probe.py"],
+    env = {"HOSTED_TOOL_{}".format(i): "$(rootpaths {})".format(tool) for i, tool in enumerate(_TOOLS)},
+    main = "probe.py",
+    tools = _TOOLS,
+)
