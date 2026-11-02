@@ -1,0 +1,43 @@
+load("@llvm//:defs.bzl", "exec_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load(":contract.bzl", "tool_file")
+
+_TOOLS = [
+    "@llvm//tools/internal:module-map-generator",
+    "@llvm//tools/internal:header-parser",
+    "@llvm//tools/internal:static-library-validator",
+    "@llvm//tools/internal:link-wrapper",
+    "@llvm//tools/def_file_generator",
+    "@llvm//tools/case_insensitive_vfs",
+    "@llvm//tools:clang++",
+    "@llvm//tools:llvm-nm",
+]
+
+[
+    tool_file(
+        name = kind + str(i),
+        executable_view = kind == "exe",
+        tool = tool,
+    )
+    for i, tool in enumerate(_TOOLS[:6])
+    for kind in [
+        "default",
+        "exe",
+    ]
+]
+
+_EXES = [":exe" + str(i) for i in range(6)] + _TOOLS[6:]
+
+_DEFAULTS = [":default" + str(i) for i in range(6)]
+
+exec_test(
+    py_test,
+    name = "hosted_tools",
+    srcs = ["probe.py"],
+    env = {"HOSTED_TOOL_{}".format(i): "$(rootpaths {})".format(tool) for i, tool in enumerate(_EXES)} | {
+        "HOSTED_DEFAULT_{}".format(i): "$(rootpath {})".format(tool)
+        for i, tool in enumerate(_DEFAULTS)
+    },
+    main = "probe.py",
+    tools = _EXES + _DEFAULTS,
+)
