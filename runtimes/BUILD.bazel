@@ -49,6 +49,7 @@ selects.config_setting_group(
     name = "profile_runtime_enabled",
     match_any = [
         ":coverage_enabled",
+        "//config:bazel_fdo_instrument_enabled",
         "//config:profile_enabled",
     ],
 )

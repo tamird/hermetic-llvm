@@ -1,14 +1,17 @@
 load("@bazel_features//:features.bzl", "bazel_features")
 load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 
+# TODO(https://github.com/bazelbuild/bazel/issues/32207): Declare the provider field type in fields.
+# TODO(https://github.com/bazelbuild/bazel/issues/32021): Annotate the depset element type there.
 IncludePathInfo = provider(
     "IncludePathInfo",
     fields = {
-        "textual_headers": "A depset of File objects representing headers to be declared as textual headers.",
+        "textual_headers": "A depset of File objects representing headers to be declared as textual headers.",  # type: depset[File]
     },
 )
 
 def _module_map_impl(ctx):
+    # type: (...) -> DefaultInfo
     module_map = ctx.actions.declare_file(ctx.attr.name + ".modulemap")
 
     include_path_info = ctx.attr.include_path[IncludePathInfo]
@@ -18,7 +21,9 @@ def _module_map_impl(ctx):
         # Clang resolve them lazily instead of stat'ing every one of them
         # whenever the module map is parsed. Separate submodules preserve
         # lazy resolution when Clang validates nested textual includes.
-        # Computing sizes requires the headers as inputs.
+        # Computing sizes requires the headers as inputs. Supports path
+        # mapping, but doesn't opt into it since the decision needs to be in
+        # sync with whether compilation actions are opted in.
         output_args = ctx.actions.args()
         output_args.add(module_map)
         header_args = ctx.actions.args()
@@ -32,7 +37,6 @@ def _module_map_impl(ctx):
             outputs = [module_map],
             mnemonic = "CppModuleMap",
             progress_message = "Writing module map %{output}",
-            execution_requirements = {"supports-path-mapping": "1"},
         )
         return DefaultInfo(files = depset([module_map]))
 
@@ -84,10 +88,13 @@ module_map = rule(
 )
 
 def _include_path_impl(ctx):
+    # type: (...) -> list[IncludePathInfo]
     textual_headers = []
 
     for src in ctx.attr.srcs:
-        if DirectoryInfo in src:
+        if IncludePathInfo in src:
+            textual_headers.append(src[IncludePathInfo].textual_headers)
+        elif DirectoryInfo in src:
             # Source directories are opaque even at execution time, but
             # `headers_directory` enumerates their files in a DirectoryInfo.
             textual_headers.append(src[DirectoryInfo].transitive_files)

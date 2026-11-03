@@ -6,6 +6,7 @@ load("@bazel_skylib//rules/directory:subdirectory.bzl", "subdirectory")
 # the DirectoryInfo for header inclusion checking and the toolchain's module
 # map.
 def headers_directory(name, path, visibility = None):
+    # type: (str, str, Sequence[str | Label] | None) -> None
     if path == ".":
         directory(
             name = name + "_directory",
@@ -36,6 +37,7 @@ def headers_directory(name, path, visibility = None):
     )
 
 def _headers_directory_impl(ctx):
+    # type: (...) -> list[DirectoryInfo | DefaultInfo]
     return [
         ctx.attr.directory[DirectoryInfo],
         DefaultInfo(
@@ -46,13 +48,14 @@ def _headers_directory_impl(ctx):
 _headers_directory = rule(
     implementation = _headers_directory_impl,
     attrs = {
-        "directory": attr.label(),
-        "source_directory": attr.label(),
+        "directory": attr.label(mandatory = True),
+        "source_directory": attr.label(mandatory = True),
     },
     cfg = config.none(),
 )
 
 def _directory_info_impl(ctx):
+    # type: (...) -> list[DirectoryInfo | DefaultInfo]
     files = ctx.attr.src[DefaultInfo].files.to_list()
     if len(files) != 1 or not files[0].is_directory:
         fail("directory_info requires exactly one directory artifact")
