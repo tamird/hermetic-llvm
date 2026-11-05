@@ -1,4 +1,4 @@
-"""glibc's static archives (libc.a, libm.a) and static startup files, from source.
+"""glibc's static archives (libc.a, libm.a, libresolv.a) and static startup files, from source.
 
 glibc has no build description other than its makefiles, and those decide what
 to compile through `sysdeps` directory ordering, `Implies` files, generated
@@ -6,7 +6,7 @@ makefile fragments and a configure run -- none of which exists in Bazel.  So
 the build is *transcribed*: a reference `configure && make V=1` with this
 toolchain's own Clang is reduced by `gen_manifest.py` to
 
-  * a manifest (`<arch>/manifest.bzl`): for every object of libc.a and libm.a,
+  * a manifest (`<arch>/manifest.bzl`): for every object of the static archives,
     its source file and its exact flags, with the directories of the reference
     build replaced by placeholders (flags are stored once, in FLAGS, and a
     flag set is a list of indexes into it), and
