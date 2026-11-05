@@ -1,0 +1,46 @@
+name: Verify the static GNU resolver archive
+on:
+  push:
+    branches: [qualification/glibc-static-resolver-check]
+permissions:
+  contents: read
+jobs:
+  reference:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false, fetch-depth: 4}
+      - name: Bind product and prepare Bazel
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          d="$RUNNER_TEMP/resolver-$ARCH"
+          mkdir -p "$d/public" "$d/bin"
+          echo '{"status":"INCOMPLETE","phase":"bootstrap"}' > "$d/public/receipt.json"
+          cp .github/workflows/static_resolver.py "$d/"
+          test "$(git rev-parse HEAD^)" = a60470fd45eddfcc0635dfccf2f227fa61d266a5
+          test "$(git rev-parse HEAD^^)" = 9aa8179b64dd3eb3cd2c3e51ec303b70f48534d7
+          test "$(git rev-parse HEAD^^^)" = 6f070847add9ac9bf0d19c96dee873e84f9594d9
+          git checkout --detach HEAD^
+          curl --fail --location --retry 3 --max-time 120 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$d/bin/bazel"
+          echo "e1508323f347ad1465a887bc5d2bfb91cffc232d11e8e997b623227c6b32fb76  $d/bin/bazel" | sha256sum -c -
+          chmod +x "$d/bin/bazel"
+      - name: Regenerate from the GNU reference and verify Bazel's archive
+        env:
+          ARCH: ${{ matrix.arch }}
+          CARRIER: ${{ github.sha }}
+        run: |
+          env -i HOME="$HOME" USER="$USER" PATH="$RUNNER_TEMP/resolver-$ARCH/bin:$PATH" RUNNER_TEMP="$RUNNER_TEMP" ARCH="$ARCH" CARRIER="$CARRIER" python3 -B "$RUNNER_TEMP/resolver-$ARCH/static_resolver.py"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: glibc-resolver-${{ matrix.arch }}
+          path: ${{ runner.temp }}/resolver-${{ matrix.arch }}/public/
+          if-no-files-found: error
