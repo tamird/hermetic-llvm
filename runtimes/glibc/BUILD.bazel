@@ -117,7 +117,7 @@ copy_to_directory(
     srcs = LIBS + LINKER_SCRIPTS + [
         "libc_nonshared.a",
     ] + select({
-        # libc.a, libm.a and the archives glibc has emptied into libc.a, next
+        # The real static archives and those glibc has emptied into libc.a, next
         # to the stubs: a -static link looks for lib*.a only, so the two sets
         # never compete.
         "//constraints/glibc_linkage:static": ["//3rd_party/libc/glibc/static:archives"],
