@@ -53,5 +53,5 @@ docker run --rm -u 0 -v "$work":/w -v "$toolchain":/tc:ro ubuntu:24.04 bash -eux
       --with-lld --disable-werror --enable-kernel=4.19 --disable-nscd \
       --disable-timezone-tools --without-selinux > configure.log 2>&1
   make -j\$(nproc) V=1 > make.log 2>&1
-  ls -la libc.a math/libm.a
+  ls -la libc.a math/libm.a resolv/libresolv.a
 "
