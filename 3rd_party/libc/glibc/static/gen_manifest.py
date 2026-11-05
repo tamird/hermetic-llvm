@@ -4,8 +4,8 @@
 Usage: gen_manifest.py <arch> <src-dir> <build-dir> <make.log> <out-dir>
 
 `make V=1` of a configured glibc tree prints every compile command.  This
-script keeps the ones whose object ends up in the static archives a fully
-static link needs (libc.a, libm.a) or in the static startup files (crt1.o,
+script keeps the ones whose object ends up in the static archives supplied by the
+toolchain (libc.a, libm.a, libresolv.a) or in the static startup files (crt1.o,
 rcrt1.o), rewrites each into a form that does not depend on where the build
 ran, and writes
 
@@ -36,7 +36,7 @@ AR = os.environ.get("AR", "llvm-ar")
 LOG_BUILD = os.environ.get("LOG_BUILD", "/w/build-" + arch)
 LOG_SRC = os.environ.get("LOG_SRC", "/w/glibc-2.44")
 
-ARCHIVES = {"libc.a": "libc.a", "libm.a": "math/libm.a"}
+ARCHIVES = {"libc.a": "libc.a", "libm.a": "math/libm.a", "libresolv.a": "resolv/libresolv.a"}
 # The startup files of a static link.  The toolchain's own are made for dynamic
 # links and will not do: its crt1.o has no static-reloc.o (the stub of
 # _dl_relocate_static_pie a non-PIE static link needs), and its crti.o/crtn.o
