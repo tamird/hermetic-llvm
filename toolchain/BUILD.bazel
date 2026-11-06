@@ -57,6 +57,14 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+# libunwind itself builds with the stage0 toolchain.
+config_setting(
+    name = "static_glibc_runtime",
+    constraint_values = ["//constraints/glibc_linkage:static"],
+    flag_values = {":runtime_stage": "complete"},
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "runtimes_all",
     flag_values = {
@@ -270,6 +278,7 @@ cc_args_list(
 cc_args_list(
     name = "unwindlib",
     args = select({
+        ":static_glibc_runtime": ["//toolchain/args:unwindlib_compiler_rt"],
         "@platforms//os:windows": ["//toolchain/args/windows:unwindlib"],
         "//conditions:default": ["//toolchain/args:unwindlib_none"],
     }),

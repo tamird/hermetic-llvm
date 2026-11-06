@@ -2,6 +2,7 @@ load("@bazel_lib//lib:transitions.bzl", "platform_transition_binary")
 load("@llvm//:defs.bzl", "exec_test")
 load("@llvm//toolchain:selects.bzl", "platform_llvm_binary")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 alias(
@@ -12,6 +13,14 @@ alias(
 cc_binary(
     name = "hello",
     srcs = ["main.c"],
+)
+
+cc_test(
+    name = "static_glibc_pthread_cancel_test",
+    srcs = ["pthread_cancel.c"],
+    # C-only linkers such as Go's do not pass Bazel's C++ runtime archives.
+    features = ["-static_link_cpp_runtimes"],
+    target_compatible_with = ["//constraints/glibc_linkage:static"],
 )
 
 platform(

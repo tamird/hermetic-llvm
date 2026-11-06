@@ -1,3 +1,4 @@
+load("@bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("//runtimes:defs.bzl", "stub_library")
 
@@ -30,13 +31,26 @@ config_setting(
     },
 )
 
+# glibc uses the unwinder for pthread cancellation, including in C programs.
+copy_file(
+    name = "static_unwind",
+    src = ":libunwind.static",
+    out = "static/libunwind.a",
+    allow_symlink = True,
+)
+
 copy_to_directory(
     name = "libunwind_library_search_directory",
-    srcs = [
-        ":unwind",
-    ] + select({
+    srcs = select({
+        "//toolchain:static_glibc_runtime": [":static_unwind"],
+        "//conditions:default": [":unwind"],
+    }) + select({
         ":stub_libgcc_s": [":gcc_s"],
         "//conditions:default": [],
     }),
+    root_paths = [
+        ".",
+        "runtimes/libunwind/static",
+    ],
     visibility = ["//visibility:public"],
 )
