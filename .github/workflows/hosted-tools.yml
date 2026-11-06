@@ -1,0 +1,36 @@
+name: Qualify the static GNU C runtime on current LLVM
+on:
+  push:
+    branches: [qualification/current-main-c-glibc]
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false, fetch-depth: 6}
+      - name: Run the two static C binaries on ARM64
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/unwind"
+          mkdir -p "$d/dist"
+          curl --retry 3 -fsSL --proto '=https' --proto-redir '=https' --max-time 90 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-arm64 -o "$d/bazel"
+          echo "bb608519a440d45d10304eb684a73a2b6bb7699c5b0e5434361661b25f113a5d  $d/bazel" | sha256sum -c -
+          chmod 755 "$d/bazel"
+          for url in https://ftp.gnu.org/gnu/glibc/glibc-2.44.tar.xz https://ftpmirror.gnu.org/glibc/glibc-2.44.tar.xz https://mirror.bazel.build/ftp.gnu.org/gnu/glibc/glibc-2.44.tar.xz; do
+            if curl -fsSL --proto '=https' --proto-redir '=https' --max-time 70 "$url" -o "$d/download" && echo "37f600f2bef3c5e8300147059568b2a2e40a7ad6ccc65ce942556d49429cc667  $d/download" | sha256sum -c -; then
+              mv "$d/download" "$d/dist/glibc-2.44.tar.xz"
+              break
+            fi
+          done
+          env -i HOME="$HOME" USER="$USER" PATH="$d:$PATH" LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" python3 -B .github/workflows/static_native.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: native-arm64-c-runtime
+          path: ${{ runner.temp }}/unwind/report.json
+          if-no-files-found: error
+          retention-days: 5
