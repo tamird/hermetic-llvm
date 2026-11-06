@@ -1,0 +1,9 @@
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+cc_test(
+    name = "resolver_test",
+    srcs = ["resolver.c"],
+    features = ["-static_link_cpp_runtimes"],
+    linkopts = ["-lresolv"],
+    target_compatible_with = ["//constraints/glibc_linkage:static"],
+)
