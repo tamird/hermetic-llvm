@@ -1,0 +1,34 @@
+name: Check the LLVM unwinder in both static GNU search directories
+on:
+  push:
+    branches: [qualification/static-glibc-direct-unwind]
+permissions:
+  contents: read
+jobs:
+  archive:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false, fetch-depth: 2}
+      - name: Verify both target archives and run native pthread cancellation
+        run: |
+          d="$RUNNER_TEMP/unwind"
+          mkdir -p "$d"
+          cp .github/workflows/direct_unwind.py "$d/"
+          test "$(git rev-parse HEAD^)" = 1273f916be8c7109542be8fef009258a56369462
+          git checkout --detach HEAD^
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/tamird/hermetic-llvm/be1f1ad7a666e3fc89dc5fe69a4e4a0bf0af5eea/.github/workflows/static_unwind.py -o "$d/static_unwind.py"
+          echo "cb6ef43c1d5b7b38d6ea7606a51b9e3a038e91a05141f1a11bd94e50a5cb2b6c  $d/static_unwind.py" | sha256sum -c -
+          curl -fsSL --retry 3 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$d/bazel"
+          echo "e1508323f347ad1465a887bc5d2bfb91cffc232d11e8e997b623227c6b32fb76  $d/bazel" | sha256sum -c -
+          chmod +x "$d/bazel"
+          env -i HOME="$HOME" USER="$USER" PATH="$d:$PATH" LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" python3 -B "$d/direct_unwind.py"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: target-unwind-archives
+          path: ${{ runner.temp }}/unwind/report.json
+          if-no-files-found: error
+          retention-days: 3
