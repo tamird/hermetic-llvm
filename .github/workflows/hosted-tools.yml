@@ -1,0 +1,30 @@
+name: Check static GNU C cancellation and the unwinder bootstrap
+on:
+  push:
+    branches: [qualification/static-gnu-cc-unwinder]
+permissions:
+  contents: read
+jobs:
+  cancel:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false, fetch-depth: 3}
+      - name: Test the same C source with each toolchain
+        run: |
+          d="$RUNNER_TEMP/unwind"
+          mkdir -p "$d"
+          cp .github/workflows/static_unwind.py "$d/"
+          curl -fsSL --retry 3 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$d/bazel"
+          echo "e1508323f347ad1465a887bc5d2bfb91cffc232d11e8e997b623227c6b32fb76  $d/bazel" | sha256sum -c -
+          chmod +x "$d/bazel"
+          env -i HOME="$HOME" USER="$USER" PATH="$d:$PATH" LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" python3 -B "$d/static_unwind.py"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: real-static-glibc-pthread-cancellation
+          path: ${{ runner.temp }}/unwind/report.json
+          if-no-files-found: error
+          retention-days: 3
