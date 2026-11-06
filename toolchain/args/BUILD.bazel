@@ -1085,6 +1085,12 @@ cc_args(
 )
 
 cc_args(
+    name = "unwindlib_compiler_rt",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = ["--unwindlib=libunwind"],
+)
+
+cc_args(
     name = "unwindlib_none",
     actions = [
         "@rules_cc//cc/toolchains/actions:link_actions",
