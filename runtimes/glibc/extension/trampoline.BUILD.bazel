@@ -42,6 +42,7 @@ declare_glibc_repository_target(
 
 declare_glibc_repository_target(
     name = "glibc_static_srcs",
+    architecture_specific = False,
     bazel_repository = "@glibc",
     bazel_target = "static_srcs",
     target_compatible_with = ["@platforms//os:linux"],
@@ -49,6 +50,7 @@ declare_glibc_repository_target(
 
 declare_glibc_repository_target(
     name = "glibc_static_src_marker",
+    architecture_specific = False,
     bazel_repository = "@glibc",
     bazel_target = "static_src_marker",
     target_compatible_with = ["@platforms//os:linux"],
@@ -56,6 +58,7 @@ declare_glibc_repository_target(
 
 declare_glibc_repository_target(
     name = "glibc_static_kernel_headers",
+    architecture_specific = False,
     bazel_repository = "@glibc",
     bazel_target = "static_kernel_headers",
     target_compatible_with = ["@platforms//os:linux"],
