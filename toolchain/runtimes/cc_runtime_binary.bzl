@@ -17,36 +17,8 @@ _linux_musl_platforms = {
 
 cc_runtime_stage1_hosted_binary, _cc_runtime_stage1_hosted_binary_internal = _stage1_hosted.clone().build()
 
-# Set the platform on the same binary rule so callers still get one default file.
-# Bazel requires the second rule returned by build() to have a top-level name.
-# buildifier: disable=unused-variable
-_linux_musl_binary, _linux_musl_binary_internal = _stage1_hosted.set(
+cc_runtime_stage1_hosted_tool, _cc_runtime_stage1_hosted_tool_internal = _stage1_hosted.set(
     "platforms",
     select(_linux_musl_platforms | {"//conditions:default": []}),
+    keep_if_empty = True,
 ).build()
-
-def cc_runtime_stage1_hosted_tool(name, visibility = None, target_compatible_with = [], **kwargs):
-    """Builds a stage 1 tool that can run without an installed libc on Linux."""
-    cc_runtime_stage1_hosted_binary(
-        name = "native/" + name,
-        target_compatible_with = target_compatible_with,
-        visibility = ["//visibility:private"],
-        **kwargs
-    )
-    _linux_musl_binary(
-        name = "musl/" + name,
-        target_compatible_with = target_compatible_with + select(
-            {config: [] for config in _linux_musl_platforms} |
-            {"//conditions:default": ["@platforms//:incompatible"]},
-        ),
-        visibility = ["//visibility:private"],
-        **kwargs
-    )
-    native.alias(
-        name = name,
-        actual = select(
-            {config: ":musl/" + name for config in _linux_musl_platforms} |
-            {"//conditions:default": ":native/" + name},
-        ),
-        visibility = visibility,
-    )
