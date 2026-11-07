@@ -1,0 +1,71 @@
+diff --git a/with_cfg/private/builder.bzl b/with_cfg/private/builder.bzl
+index f9f2f85701b7fd0aa9a48efcf3b303b163b2be60..c6556e0a75a01961316b7ccb4f9d6b0764464a1f 100644
+--- a/with_cfg/private/builder.bzl
++++ b/with_cfg/private/builder.bzl
+@@ -41,6 +41,15 @@ def _make_builder(rule_info, *, values = {}, operations = {}):
+             mutable_has_been_built = mutable_has_been_built,
+             overrides_allowed = overrides_allowed,
+         ),
++        prepend = lambda setting, value: _prepend(
++            setting,
++            value,
++            self = self,
++            values = values,
++            operations = operations,
++            mutable_has_been_built = mutable_has_been_built,
++            overrides_allowed = overrides_allowed,
++        ),
+         set = lambda setting, value: _set(
+             setting,
+             value,
+@@ -142,6 +151,22 @@ def _extend(setting, value, *, self, values, operations, mutable_has_been_built,
+     operations[setting] = "extend"
+     return self
+ 
++def _prepend(setting, value, *, self, values, operations, mutable_has_been_built, overrides_allowed):
++    if mutable_has_been_built[0]:
++        fail("prepend() can only be called before build()")
++    validate_and_get_attr_name(setting)
++    if setting in values:
++        if setting in overrides_allowed:
++            overrides_allowed.pop(setting)
++        else:
++            fail("Cannot prepend setting '{}' because it has already been added to this builder (consider using clone())".format(setting))
++
++    # Make a deep copy so that subsequent modification doesn't affect the builder state.
++    # This improves readability but is also necessary for clone() to work correctly.
++    values[setting] = map_attr(_clone_value_deeply, value)
++    operations[setting] = "prepend"
++    return self
++
+ def _set(setting, value, *, self, values, operations, mutable_has_been_built, overrides_allowed):
+     if mutable_has_been_built[0]:
+         fail("set() can only be called before build()")
+diff --git a/with_cfg/private/transition.bzl b/with_cfg/private/transition.bzl
+index 0a007b3513b5a02c3491f05fa40d69a4f5e9442a..ebbf78cdb5a609929af63dff3ad0cd68d9f1f014 100644
+--- a/with_cfg/private/transition.bzl
++++ b/with_cfg/private/transition.bzl
+@@ -49,13 +49,22 @@ def _transition_base_impl(settings, attr, *, operations, original_settings_label
+             new_settings[key] = getattr(attr, attr_name)
+         elif operation == "extend":
+             # Ensure idempotency by appending the tail only when the list-valued setting doesn't
+-            # already has the tail. This ensures that chaining transitioned rules doesn't result in
++            # already have the tail. This ensures that chaining transitioned rules doesn't result in
+             # a blow-up of the list.
+             tail = getattr(attr, attr_name)
+             if settings[key][-len(tail):] == tail:
+                 new_settings[key] = settings[key]
+             else:
+                 new_settings[key] = settings[key] + tail
++        elif operation == "prepend":
++            # Ensure idempotency by prepending the head only when the list-valued setting doesn't
++            # already have the head. This ensures that chaining transitioned rules doesn't result in
++            # a blow-up of the list.
++            head = getattr(attr, attr_name)
++            if settings[key][:len(head)] == head:
++                new_settings[key] = settings[key]
++            else:
++                new_settings[key] = head + settings[key]
+         else:
+             fail("Unknown operation: {}".format(operation))
+ 
