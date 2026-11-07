@@ -1,0 +1,42 @@
+name: Qualify conditional hosted tool platforms
+on:
+  push:
+    branches: [qualification/conditional-hosted-platform-compat]
+permissions: {}
+jobs:
+  check:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false, fetch-depth: 3}
+      - name: Verify source and stock Bazel clients
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 51d740df115b817c17df9bfb3af3e61e820788eb
+          test "$(git rev-parse HEAD^^)" = 533981c365e8ee683926bd465efcc81bc31158bf
+          git diff --exit-code HEAD^^ HEAD^ -- . ':!toolchain/runtimes/cc_runtime_binary.bzl'
+          git diff --exit-code HEAD^ HEAD -- . ':!.github/workflows/hosted-platform.yml' ':!.github/qualification/hosted-platform'
+          w="$RUNNER_TEMP/hosted-platform"
+          mkdir -m 700 "$w"
+          cd "$w"
+          for version in 7.7.0 9.3.1; do
+            curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 "https://releases.bazel.build/$version/release/bazel-$version-linux-x86_64" -o "bazel${version%%.*}"
+          done
+          sha256sum -c <<'SUMS'
+          fe7e799cbc9140f986b063e06800a3d4c790525075c877d00a7112669824acbf  bazel7
+          7f775b54bbec487efaf0f49ccda1d2ed02cd34f582edfdd6aeeec76e39ef585c  bazel9
+          SUMS
+          chmod 700 bazel7 bazel9
+      - name: Compare original and conditional settings and check real tool consumers
+        run: |
+          env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 -IB .github/qualification/hosted-platform/check.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && !cancelled()
+        with:
+          name: conditional-hosted-platform
+          path: ${{ runner.temp }}/hosted-platform/result.json
+          retention-days: 14
+          if-no-files-found: error
