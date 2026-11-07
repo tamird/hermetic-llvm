@@ -1,0 +1,59 @@
+--- a/with_cfg/private/builder.bzl
++++ b/with_cfg/private/builder.bzl
+@@ -41,9 +41,10 @@
+             mutable_has_been_built = mutable_has_been_built,
+             overrides_allowed = overrides_allowed,
+         ),
+-        set = lambda setting, value: _set(
++        set = lambda setting, value, *, keep_if_empty = False: _set(
+             setting,
+             value,
++            keep_if_empty = keep_if_empty,
+             self = self,
+             values = values,
+             operations = operations,
+@@ -142,7 +143,7 @@
+     operations[setting] = "extend"
+     return self
+
+-def _set(setting, value, *, self, values, operations, mutable_has_been_built, overrides_allowed):
++def _set(setting, value, *, keep_if_empty, self, values, operations, mutable_has_been_built, overrides_allowed):
+     if mutable_has_been_built[0]:
+         fail("set() can only be called before build()")
+     validate_and_get_attr_name(setting)
+@@ -155,7 +156,7 @@
+     # Make a deep copy so that subsequent modification doesn't affect the builder state.
+     # This improves readability but is also necessary for clone() to work correctly.
+     values[setting] = map_attr(_clone_value_deeply, value)
+-    operations[setting] = "set"
++    operations[setting] = "set_unless_empty" if keep_if_empty else "set"
+     return self
+
+ def _resettable(label, *, self, mutable_original_settings_label, mutable_has_been_built):
+--- a/with_cfg/private/transition.bzl
++++ b/with_cfg/private/transition.bzl
+@@ -44,9 +44,9 @@
+     for setting, operation in operations.items():
+         attr_name = validate_and_get_attr_name(setting)
+         key = _get_settings_key(setting)
+-        if operation == "set":
+-            # Always idempotent.
+-            new_settings[key] = getattr(attr, attr_name)
++        if operation in ("set", "set_unless_empty"):
++            value = getattr(attr, attr_name)
++            new_settings[key] = settings[key] if operation == "set_unless_empty" and value == [] else value
+         elif operation == "extend":
+             # Ensure idempotency by appending the tail only when the list-valued setting doesn't
+             # already has the tail. This ensures that chaining transitioned rules doesn't result in
+--- a/with_cfg/private/with_cfg.bzl
++++ b/with_cfg/private/with_cfg.bzl
+@@ -56,7 +56,8 @@
+         corresponding native Bazel flag (e.g. `--java_runtime_version`) is set to `value`. If
+         `setting` is a [`Label`](https://bazel.build/rules/lib/builtins/Label) of a [user-defined
+         build setting](https://bazel.build/extending/config#user-defined-build-settings), then that
+-        setting is set to `value`. `value` can be a `select` expression.
++        setting is set to `value`. `value` can be a `select` expression. For list-valued settings,
++        pass `keep_if_empty = True` to retain the input when the selected list is empty.
+       * `extend(setting, value)`: Like `set`, but instead of setting the setting to `value`, the
+         entries of `value` are appended to the current value if it doesn't already have them as a
+         suffix. `value` has to be a list or a `select` expression evaluating to a list. This is
