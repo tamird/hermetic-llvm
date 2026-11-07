@@ -1,0 +1,46 @@
+name: Check LLVM with the current prepend proposal
+on:
+  push:
+    branches: [qualification/hosted-platform-prepend-current]
+permissions: {}
+jobs:
+  check:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Verify the two exact public sources and Bazel
+        run: |
+          set -euo pipefail
+          git init .
+          git fetch --depth=3 --no-tags https://github.com/tamird/hermetic-llvm.git "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = c0768cac2fd3870b91d2dc4db9e2659f4c09ed45
+          test "$(git rev-parse 'HEAD^^{tree}')" = 76350f086f65d5e7cc89dbeec5b9eea9412fb022
+          test "$(git rev-parse HEAD^^)" = 533981c365e8ee683926bd465efcc81bc31158bf
+          git diff --exit-code HEAD^^ HEAD^ -- . ':!toolchain/runtimes/cc_runtime_binary.bzl'
+          git diff --exit-code HEAD^ HEAD -- . ':!.github/workflows/hosted-platform.yml' ':!.github/qualification/hosted-platform/check.py'
+          w="$RUNNER_TEMP/hosted-platform"
+          mkdir -m 700 "$w"
+          cd "$w"
+          git init supplier
+          git -C supplier fetch --no-tags --depth=2 https://github.com/tamird/with_cfg.bzl.git 01433cd771f82130524fd1a867fa995004b55ae3
+          git -C supplier checkout --detach FETCH_HEAD
+          test "$(git -C supplier rev-parse HEAD)" = 01433cd771f82130524fd1a867fa995004b55ae3
+          test "$(git -C supplier rev-parse 'HEAD^{tree}')" = b9ae482808bcdc1c3d4a8ef571b4d61964c3ce8c
+          test "$(git -C supplier rev-parse HEAD^)" = 9b8b10962419346889e528cbe57a539754489d57
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 'https://releases.bazel.build/9.3.1/release/bazel-9.3.1-linux-x86_64' -o bazel9
+          echo '7f775b54bbec487efaf0f49ccda1d2ed02cd34f582edfdd6aeeec76e39ef585c  bazel9' | sha256sum -c -
+          chmod 700 bazel9
+      - name: Resolve both Windows consumers and run the Linux module-map generator
+        run: |
+          env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 -IB .github/qualification/hosted-platform/check.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && !cancelled()
+        with:
+          name: actual-hosted-platform-with-current-prepend
+          path: ${{ runner.temp }}/hosted-platform/result.json
+          retention-days: 14
+          if-no-files-found: error
