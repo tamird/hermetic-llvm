@@ -1,0 +1,75 @@
+load("@llvm//:defs.bzl", "exec_test")
+load("@llvm//toolchain/runtimes:cc_runtime_binary.bzl", "cc_runtime_stage1_hosted_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+load(":contract.bzl", "platform_facts", "tool_file")
+
+_BASE = ["@platforms//os:linux", "@platforms//cpu:aarch64"]
+
+[
+    platform(
+        name = name,
+        constraint_values = _BASE + libc,
+    )
+    for name, libc in [
+        ("unspecified", []),
+        ("musl", ["@llvm//constraints/libc:musl"]),
+    ]
+]
+
+[
+    platform_facts(
+        name = name,
+        constraints = _BASE + [
+            "@llvm//constraints/libc:gnu.2.28",
+            "@llvm//constraints/libc:musl",
+            "@llvm//constraints/libc:unconstrained",
+        ],
+    )
+    for name in ["target_platform", "exec_platform"]
+]
+
+cc_runtime_stage1_hosted_binary(
+    name = "gnu_program",
+    srcs = ["gnu.c"],
+)
+
+_TOOLS = [
+    "@llvm//tools/internal:module-map-generator",
+    "@llvm//tools/internal:header-parser",
+    "@llvm//tools/internal:static-library-validator",
+    "@llvm//tools/internal:link-wrapper",
+    "@llvm//tools/def_file_generator",
+    "@llvm//tools/case_insensitive_vfs",
+]
+
+[tool_file(name = "tool" + str(i), tool = tool) for i, tool in enumerate(_TOOLS)]
+
+[
+    filegroup(
+        name = "info" + str(i),
+        srcs = [":tool" + str(i)],
+        output_group = "description",
+    )
+    for i in range(len(_TOOLS))
+]
+
+_EXES = [":tool" + str(i) for i in range(len(_TOOLS))] + ["@llvm//tools:clang++", "@llvm//tools:llvm-nm"]
+_INFO = [":info" + str(i) for i in range(len(_TOOLS))]
+
+exec_test(
+    py_test,
+    name = "hosted_tools",
+    srcs = ["probe.py"],
+    data = [":gnu_program", ":target_platform"],
+    env = {
+        "EXEC_PLATFORM": "$(rootpath :exec_platform)",
+        "GNU_PROGRAM": "$(rootpath :gnu_program)",
+        "TARGET_PLATFORM": "$(rootpath :target_platform)",
+    } | {
+        "HOSTED_TOOL_{}".format(i): "$(rootpaths {})".format(tool) for i, tool in enumerate(_EXES)
+    } | {
+        "HOSTED_INFO_{}".format(i): "$(rootpath {})".format(tool) for i, tool in enumerate(_INFO)
+    },
+    main = "probe.py",
+    tools = _EXES + _INFO + [":exec_platform"],
+)

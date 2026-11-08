@@ -1,0 +1,46 @@
+name: Check LLVM 0.8.24 on a native ARM64 execution platform
+on:
+  push:
+    branches: [qualification/llvm-0.8.24-arm-exec-libc]
+permissions: {}
+jobs:
+  linux:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - name: Build and exercise six stock helpers with each execution platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init .
+          git fetch --no-tags --depth=2 https://github.com/tamird/hermetic-llvm.git "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 39e71f9391895169b05ccd62cbb1956ae5322ff3
+          w="$RUNNER_TEMP/stock-llvm-platform"
+          mkdir -m 700 "$w"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.24/hermetic-llvm-v0.8.24.tar.gz -o "$w/release.tar.gz"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/58575748049d41ea72c0d74e3ead12e2044d43bf/modules/llvm/0.8.24/source.json -o "$w/source.json"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 https://releases.bazel.build/9.3.1/release/bazel-9.3.1-linux-arm64 -o "$w/bazel"
+          echo "10ba9cb76d4ee748d274dcc2981992bb12b74a203dc41a9c2eceeb8f29359366  $w/bazel" | sha256sum -c
+          chmod +x "$w/bazel"
+          env -i HOME="$HOME" USER="$USER" PATH="$PATH" LANG=C.UTF-8 RUNNER_TEMP="$RUNNER_TEMP" GITHUB_SHA="$GITHUB_SHA" python3 -IB .github/qualification/hosted-tools/collect.py
+      - name: Check the bounded receipt
+        id: check
+        if: always() && !cancelled()
+        shell: python
+        run: |
+          import json, os, re
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "stock-llvm-platform/result.json"
+          assert path.is_file() and not path.is_symlink() and path.stat().st_size < 131072
+          contents = path.read_text()
+          assert json.loads(contents)["carrier"] == os.environ["GITHUB_SHA"]
+          assert not re.search(r"(?i)(authorization:|bearer |x-buildbuddy-api-key|ghp_|github_pat_|-----BEGIN [A-Z ]*PRIVATE KEY)", contents)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.check.outcome == 'success'
+        with:
+          name: stock-llvm-0.8.24-arm64-exec-libc
+          path: ${{ runner.temp }}/stock-llvm-platform/result.json
+          if-no-files-found: error
