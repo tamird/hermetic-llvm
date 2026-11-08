@@ -1,0 +1,44 @@
+name: Check stock LLVM helpers on a musl execution platform
+on:
+  push:
+    branches: [qualification/declared-musl-exec]
+permissions: {}
+jobs:
+  linux:
+    if: github.repository == 'tamird/hermetic-llvm' && github.actor == github.repository_owner && github.event.created && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Build and exercise six stock helpers with each execution platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init .
+          git fetch --no-tags --depth=2 https://github.com/tamird/hermetic-llvm.git "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = f9abea4c99d6d4a779488463419b2b0486497cbc
+          w="$RUNNER_TEMP/stock-llvm-platform"
+          mkdir -m 700 "$w"
+          curl --proto '=https' --proto-redir '=https' -fsSL --retry 2 https://releases.bazel.build/9.3.1/release/bazel-9.3.1-linux-x86_64 -o "$w/bazel"
+          echo "7f775b54bbec487efaf0f49ccda1d2ed02cd34f582edfdd6aeeec76e39ef585c  $w/bazel" | sha256sum -c
+          chmod +x "$w/bazel"
+          python3 -IB .github/qualification/hosted-tools/collect.py
+      - name: Check the bounded receipt
+        id: check
+        if: always() && !cancelled()
+        shell: python
+        run: |
+          import json, os, re
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "stock-llvm-platform/result.json"
+          assert path.is_file() and not path.is_symlink() and path.stat().st_size < 131072
+          contents = path.read_text()
+          assert json.loads(contents)["carrier"] == os.environ["GITHUB_SHA"]
+          assert not re.search(r"(?i)(authorization:|bearer |x-buildbuddy-api-key|ghp_|github_pat_|-----BEGIN [A-Z ]*PRIVATE KEY)", contents)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.check.outcome == 'success'
+        with:
+          name: stock-llvm-exec-libc
+          path: ${{ runner.temp }}/stock-llvm-platform/result.json
+          if-no-files-found: error
