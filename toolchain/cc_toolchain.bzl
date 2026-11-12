@@ -296,7 +296,8 @@ def cc_toolchain(
             "@llvm//toolchain:runtimes_none": ["@llvm//toolchain/runtimes:stage0_toolchain_args"],
             "@llvm//toolchain:runtimes_stage1": ["@llvm//toolchain/runtimes:stage1_toolchain_args"],
             "@llvm//toolchain:runtimes_stage1_hosted": ["@llvm//toolchain/runtimes:stage1_hosted_toolchain_args"],
-            "//conditions:default": ["@llvm//toolchain:complete_toolchain_args"],
+            # The libc++ include paths must use the same configuration as module_map.
+            "//conditions:default": ["@llvm//toolchain:toolchain_args"],
         }) + extra_args,
         # clang-cl header parsing remains a named unsupported boundary. It can
         # become true only with a dialect-correct parse-only action and proved
