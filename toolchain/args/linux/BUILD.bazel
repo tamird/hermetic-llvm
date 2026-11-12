@@ -118,24 +118,25 @@ cc_args(
 
 # When libunwind is linked statically, the final link must supply its pthread
 # and dl dependencies. A target that opts out of the C++ runtimes omits libunwind.
-cc_args(
-    name = "libunwind_system_libraries",
-    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
-    args = [
-        # If pthread or dl is shared, omit its DT_NEEDED entry when it is unused.
-        # Restore the previous --as-needed setting for subsequent libraries.
-        "-Wl,--push-state",
-        "-Wl,--as-needed",
-        "-lpthread",
-        "-ldl",
-        "-Wl,--pop-state",
-    ],
-    # The runtime bootstrap toolchains do not define this feature.
-    requires_any_of = select({
-        "//toolchain:runtimes_all": ["//toolchain/features:static_link_cpp_runtimes"],
-        "//conditions:default": [],
-    }),
-)
+[
+    cc_args(
+        name = name,
+        actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+        args = [
+            # Restore --as-needed after omitting unused shared system libraries.
+            "-Wl,--push-state",
+            "-Wl,--as-needed",
+            "-lpthread",
+            "-ldl",
+            "-Wl,--pop-state",
+        ],
+        requires_any_of = features,
+    )
+    for name, features in [
+        ("libunwind_system_libraries", ["//toolchain/features:static_link_cpp_runtimes"]),
+        ("bootstrap_libunwind_system_libraries", []),
+    ]
+]
 
 cc_args_list(
     name = "default_libs_gnu",
@@ -187,5 +188,15 @@ alias(
         "//platforms/config:musl": ":default_libs_musl",
         "//platforms/config:gnu": ":default_libs_gnu",
     }),
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Stage 1 links the runtimes themselves, before static_link_cpp_runtimes exists.
+cc_args_list(
+    name = "bootstrap_default_libs",
+    args = select({
+        "//platforms/config:gnu": [":glibc_library_search_path"],
+        "//platforms/config:musl": [":musl_library_search_path"],
+    }) + [":bootstrap_libunwind_system_libraries"],
     target_compatible_with = ["@platforms//os:linux"],
 )

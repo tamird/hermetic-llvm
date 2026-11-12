@@ -59,8 +59,10 @@ def runtime_toolchain_args(name, stage):
     # Needs to stay out of resource_dir since clang does not always search for crtstuff for all targets.
     startfiles_and_libs = [
         "//toolchain:default_startfiles",
-        "//toolchain:default_libs",
-    ] if links_runtimes else []
+    ] + select({
+        "@platforms//os:linux": ["//toolchain/args/linux:bootstrap_default_libs"],
+        "//conditions:default": ["//toolchain:default_libs"],
+    }) if links_runtimes else []
 
     cc_args_list(
         name = name + "_generic",
