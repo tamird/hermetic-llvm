@@ -1,6 +1,17 @@
-"""Configuration-wide CRT selection for MSVC artifact tests."""
+"""Target transitions for MSVC artifact and native execution tests."""
+
+# TODO(https://github.com/bazelbuild/bazel/issues/31770): Annotate the transition once Bazel supports
+# dictionaries with typed keys.
+# type _CrtInputs = dict[{"//command_line_option:features": list[str]}]
+# type _CrtAttrs = struct[{"static_crt": bool, "target_platform": Label}, ...]
+# type _CrtOutputs = dict[{
+#     "//command_line_option:modify_execution_info": list[str],
+#     "//command_line_option:features": list[str],
+#     "//command_line_option:platforms": str,
+# }]
 
 def _crt_transition_impl(settings, attr):
+    # type: (_CrtInputs, _CrtAttrs) -> _CrtOutputs
     features = [
         feature
         for feature in settings["//command_line_option:features"]
@@ -15,6 +26,9 @@ def _crt_transition_impl(settings, attr):
         ["-dynamic_link_msvcrt", "static_link_msvcrt"] if attr.static_crt else ["-static_link_msvcrt", "dynamic_link_msvcrt"],
     )
     return {
+        # The CI path-mapping opt-in matches CppCompile for every toolchain.
+        # MSVC compile actions cannot consume those mapped paths yet.
+        "//command_line_option:modify_execution_info": [],
         "//command_line_option:features": features,
         "//command_line_option:platforms": str(attr.target_platform),
     }
@@ -23,12 +37,14 @@ _crt_transition = transition(
     implementation = _crt_transition_impl,
     inputs = ["//command_line_option:features"],
     outputs = [
+        "//command_line_option:modify_execution_info",
         "//command_line_option:features",
         "//command_line_option:platforms",
     ],
 )
 
 def _windows_msvc_artifacts_impl(ctx):
+    # type: (ctx[object, struct[{"targets": Sequence[Target]}, ...]]) -> list[DefaultInfo]
     return [DefaultInfo(
         files = depset(transitive = [
             target[DefaultInfo].files
@@ -52,4 +68,37 @@ windows_msvc_artifacts = rule(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     },
+)
+
+def _windows_msvc_native_test_impl(ctx):
+    # type: (ctx[object, struct[{"binary": Sequence[Target[FilesToRunProvider]]}, ...]]) -> list[DefaultInfo]
+    binary = ctx.attr.binary[0][DefaultInfo]
+    binary_executable = binary.files_to_run.executable
+    if binary_executable == None:
+        fail("binary target must provide an executable")
+    executable = ctx.actions.declare_file(ctx.label.name + ".exe")
+    ctx.actions.symlink(
+        output = executable,
+        target_file = binary_executable,
+    )
+    return [DefaultInfo(
+        executable = executable,
+        runfiles = binary.default_runfiles,
+    )]
+
+windows_msvc_native_test = rule(
+    implementation = _windows_msvc_native_test_impl,
+    attrs = {
+        "binary": attr.label(
+            cfg = _crt_transition,
+            executable = True,
+            mandatory = True,
+        ),
+        "static_crt": attr.bool(default = True),
+        "target_platform": attr.label(mandatory = True),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+    test = True,
 )

@@ -1,9 +1,11 @@
 load("@bazel_skylib//lib:structs.bzl", "structs")
 load("//private:llvm_project_archive.bzl", "llvm_project_archive")
+load("//private:llvm_project_common.bzl", "default_source_excludes")
 load("//private:llvm_project_from_git.bzl", "llvm_project_from_git")
 load("//private:llvm_project_from_path.bzl", "llvm_project_from_path")
 
 _DEFAULT_LLVM_VERSIONS_INDEX_FILE = "//:llvm_versions.json"
+_FLANG_23_SOURCE_PATCH = "//3rd_party/llvm-project/23.x/patches:flang-rtbuilder-windows-gnu.patch"
 
 _DEFAULT_SOURCE_PATCHES = [
     "//3rd_party/llvm-project/x.x/patches:llvm-mimalloc.patch",
@@ -15,6 +17,7 @@ _DEFAULT_SOURCE_PATCHES = [
     "//3rd_party/llvm-project/x.x/patches:lit_test_stub.patch",
     "//3rd_party/llvm-project/x.x/patches:lld-macho-thinlto-obj-path.patch",
     "//3rd_party/llvm-project/x.x/patches:llvm-bazel-msvc-trapping-math.patch",
+    "//3rd_party/llvm-project/x.x/patches:clang-modules-codegen-exclude-from-explicit-instantiation.patch",
 ]
 
 _BEFORE_23_SOURCE_PATCHES = [
@@ -87,22 +90,30 @@ _LLVM_23_SOURCE_PATCHES = [
     "//3rd_party/llvm-project/x.x/patches:clangd-multicall.patch",
     "//3rd_party/llvm-project/22.x/patches:bundle_resources_no_python.patch",
     "//3rd_party/llvm-project/x.x/patches:no_rules_python.patch",
+    "//3rd_party/llvm-project/23.x/patches:instrumentor-template.patch",
     "//3rd_party/llvm-project/x.x/patches:llvm-extra.patch",
     "//3rd_party/llvm-project/x.x/patches:llvm-cov-multicall.patch",
     "//3rd_party/llvm-project/x.x/patches:thinlto-roundtrip-before-codegen.patch",
     "//3rd_party/llvm-project/x.x/patches:llvm-bazel-libxml2.patch",
 ] + _DEFAULT_SOURCE_PATCHES
 
+_FLANG_RUNTIME_23_SOURCE_PATCH = "//3rd_party/llvm-project/23.x/patches:flang-runtime-build.patch"
+
 _LLVM_PATCHES_BY_MAJOR = {
     21: _LLVM_21_SOURCE_PATCHES,
     22: _LLVM_22_SOURCE_PATCHES,
     23: _LLVM_23_SOURCE_PATCHES,
     # So that anyone can test with the next LLVM major easily.
-    # LLVM 24 already includes upstream arm64e.x1 support.
+    # LLVM 24 includes arm64e.x1 support, the instrumentor template rule and
+    # the fix for homing functions excluded from explicit instantiation.
     24: [
         patch
         for patch in _LLVM_23_SOURCE_PATCHES
-        if patch != "//3rd_party/llvm-project/x.x/patches:llvm-macho-arm64e-x1.patch"
+        if patch not in (
+            "//3rd_party/llvm-project/x.x/patches:llvm-macho-arm64e-x1.patch",
+            "//3rd_party/llvm-project/23.x/patches:instrumentor-template.patch",
+            "//3rd_party/llvm-project/x.x/patches:clang-modules-codegen-exclude-from-explicit-instantiation.patch",
+        )
     ],
 }
 
@@ -129,7 +140,8 @@ def _create_llvm_project_repository(mctx, llvm_version, llvm_version_index, targ
             llvm_project_archive(name = "llvm-project", targets = targets, **structs.to_dict(tag))
 
     if not had_override:
-        source_archive = _source_archive_for_version(llvm_version, llvm_version_index)
+        include_flang = mctx.getenv("HERMETIC_LLVM_INCLUDE_FLANG") == "1"
+        source_archive = _source_archive_for_version(llvm_version, llvm_version_index, include_flang)
         llvm_project_archive(name = "llvm-project", targets = targets, **structs.to_dict(source_archive))
 
 def _parse_llvm_major(llvm_version):
@@ -139,7 +151,7 @@ def _parse_llvm_major(llvm_version):
 
     return int(major)
 
-def _source_archive_for_version(llvm_version, llvm_version_index):
+def _source_archive_for_version(llvm_version, llvm_version_index, include_flang):
     major = _parse_llvm_major(llvm_version)
     source_info = llvm_version_index.get(llvm_version)
     if source_info == None:
@@ -151,12 +163,34 @@ def _source_archive_for_version(llvm_version, llvm_version_index):
     if source_info.get("url") == None or source_info.get("sha256") == None:
         fail("Invalid llvm version index entry for '{}': expected keys 'url' and 'sha256'".format(llvm_version))
 
+    patches = _LLVM_PATCHES_BY_MAJOR.get(major, [])
+    if major == 23:
+        version_parts = llvm_version.split("-")[0].split(".")
+        minor, patch = int(version_parts[1]), int(version_parts[2])
+
+        # LLVM 23.1.3 and later include llvm/llvm-project#222721.
+        if minor > 1 or (minor == 1 and patch >= 3):
+            patches = [
+                source_patch
+                for source_patch in patches
+                if source_patch != "//3rd_party/llvm-project/x.x/patches:llvm-macho-arm64e-x1.patch"
+            ]
+    if major == 23 and include_flang:
+        patches = patches + [_FLANG_23_SOURCE_PATCH, _FLANG_RUNTIME_23_SOURCE_PATCH]
+
+    excludes = default_source_excludes()
+    if include_flang:
+        excludes = [exclude for exclude in excludes if exclude != "flang-rt"]
+    else:
+        excludes.append("flang")
+
     return struct(
         strip_prefix = source_info.get("strip_prefix", "llvm-project-{}.src".format(llvm_version)),
         url = source_info["url"],
         sha256 = source_info["sha256"],
         patch_args = ["-p1"],
-        patches = _LLVM_PATCHES_BY_MAJOR.get(major, []),
+        patches = patches,
+        excludes = excludes,
     )
 
 def _llvm_version_repository_impl(rctx):
@@ -171,7 +205,10 @@ bzl_library(
 """)
     rctx.file(
         "version.bzl",
-        "LLVM_VERSION = {}\n".format(repr(rctx.attr.llvm_version)),
+        "LLVM_VERSION = {}\nLLVM_VERSION_MAJOR = {}\n".format(
+            repr(rctx.attr.llvm_version),
+            repr(str(_parse_llvm_major(rctx.attr.llvm_version))),
+        ),
     )
     return rctx.repo_metadata(reproducible = True)
 

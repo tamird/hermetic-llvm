@@ -109,7 +109,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --include_param_files \
   --output=text \
-  'mnemonic("CppCompile", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppCompile", //:windows_msvc_behavior_md)' \
   >"${action_dir}/compile.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=-compiler_param_file \
@@ -147,18 +147,18 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   -c opt \
   --features=-compiler_param_file \
   --output=commands \
-  'mnemonic("CppCompile", //:windows_msvc_libcxx_behavior_debug)' \
+  'mnemonic("CppCompile", //:windows_msvc_behavior_debug)' \
   >"${action_dir}/pdb-opt-compile-flags.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   -c opt \
   --features=-compiler_param_file \
   --output=commands \
-  'mnemonic("CppLink", //:windows_msvc_libcxx_behavior_debug)' \
+  'mnemonic("CppLink", //:windows_msvc_behavior_debug)' \
   >"${action_dir}/pdb-opt-link-flags.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --include_param_files \
   --output=text \
-  'mnemonic("CppArchive", //:windows_msvc_libcxx_behavior_support)' \
+  'mnemonic("CppArchive", //:windows_msvc_behavior_support)' \
   >"${action_dir}/archive.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --output=text \
@@ -171,7 +171,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --include_param_files \
   --output=text \
-  'mnemonic("CppLink", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppLink", //:windows_msvc_behavior_md)' \
   >"${action_dir}/link.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=thin_lto \
@@ -180,20 +180,20 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=omit_frame_pointer \
   --features=-compiler_param_file \
   --output=commands \
-  'mnemonic("CppCompile", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppCompile", //:windows_msvc_behavior_md)' \
   >"${action_dir}/thin-lto-compile.txt"
 for source_action in \
   "raw-assembly:windows_msvc_raw_assembly_x86_64[.]s" \
   "preprocessed-assembly:windows_msvc_assembly[.]S" \
   "c:windows_msvc_c_smoke[.]c" \
-  "cxx:windows_msvc_libcxx_behavior[.]cc"; do
+  "cxx:windows_msvc_behavior[.]cc"; do
   action_name="${source_action%%:*}"
   source_pattern="${source_action#*:}"
   bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
     --features=thin_lto \
     --features=-compiler_param_file \
     --output=commands \
-    "inputs(\"${source_pattern}\", mnemonic(\"CppCompile\", //:windows_msvc_libcxx_behavior_md))" \
+    "inputs(\"${source_pattern}\", mnemonic(\"CppCompile\", //:windows_msvc_behavior_md))" \
     >"${action_dir}/${action_name}-compile.txt"
 done
 for compilation_mode in opt dbg; do
@@ -201,7 +201,7 @@ for compilation_mode in opt dbg; do
     -c "${compilation_mode}" \
     --features=-compiler_param_file \
     --output=commands \
-    'inputs("windows_msvc_raw_assembly_x86_64[.]s", mnemonic("CppCompile", //:windows_msvc_libcxx_behavior_md))' \
+    'inputs("windows_msvc_raw_assembly_x86_64[.]s", mnemonic("CppCompile", //:windows_msvc_behavior_md))' \
     >"${action_dir}/raw-assembly-${compilation_mode}-compile.txt"
 done
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
@@ -211,7 +211,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=omit_frame_pointer \
   --include_param_files \
   --output=text \
-  'mnemonic("CppLTOIndexing", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppLTOIndexing", //:windows_msvc_behavior_md)' \
   >"${action_dir}/thin-lto-index.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=thin_lto \
@@ -220,7 +220,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=omit_frame_pointer \
   --include_param_files \
   --output=text \
-  'mnemonic("CcLtoBackendCompile", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CcLtoBackendCompile", //:windows_msvc_behavior_md)' \
   >"${action_dir}/thin-lto-backend.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=thin_lto \
@@ -229,7 +229,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=omit_frame_pointer \
   --include_param_files \
   --output=text \
-  'mnemonic("CppLink", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppLink", //:windows_msvc_behavior_md)' \
   >"${action_dir}/thin-lto-link.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=thin_lto \
@@ -247,7 +247,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --@llvm//toolchain:bootstrap_stage=stage1_from_source \
   --include_param_files \
   --output=text \
-  'mnemonic("CppLTOIndexing", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppLTOIndexing", //:windows_msvc_behavior_md)' \
   >"${action_dir}/stage1-thin-lto-index.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --features=thin_lto \
@@ -256,7 +256,7 @@ bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --@llvm//toolchain:bootstrap_stage=stage1_from_source \
   --include_param_files \
   --output=text \
-  'mnemonic("CppLink", //:windows_msvc_libcxx_behavior_md)' \
+  'mnemonic("CppLink", //:windows_msvc_behavior_md)' \
   >"${action_dir}/stage1-thin-lto-link.txt"
 bazel --bazelrc=.bazelrc aquery "${common_flags[@]}" \
   --include_param_files \
@@ -339,6 +339,7 @@ assert_absent "${action_dir}/msvc-libcxx-compile.txt" "/clang:-fthin-link-bitcod
 assert_absent "${action_dir}/msvc-libcxx-compile.txt" "/EHs-c-"
 assert_absent "${action_dir}/msvc-libcxx-compile.txt" "/clang:-fno-rtti"
 assert_absent "${action_dir}/msvc-libcxx-compile.txt" "/clang:-fomit-frame-pointer"
+assert_contains "${action_dir}/msvc-libcxx-compile.txt" "_CRT_STDIO_ISO_WIDE_SPECIFIERS"
 
 assert_contains "${action_dir}/release-libcxxabi-compile.txt" "libcxxabi/src/private_typeinfo.cpp"
 assert_contains "${action_dir}/release-libcxxabi-compile.txt" "-funwind-tables"
@@ -370,6 +371,7 @@ assert_contains "${action_dir}/default-compile-flags.txt" "/EHsc"
 assert_contains "${action_dir}/default-compile-flags.txt" "/GR"
 assert_absent "${action_dir}/default-compile-flags.txt" "/bigobj"
 assert_contains "${action_dir}/default-compile-flags.txt" "/DNOMINMAX"
+assert_contains "${action_dir}/default-compile-flags.txt" "_CRT_STDIO_ISO_WIDE_SPECIFIERS"
 assert_contains "${action_dir}/default-compile-flags.txt" "/clang:-gno-codeview-command-line"
 assert_absent "${action_dir}/default-compile-flags.txt" "/D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS"
 assert_contains "${action_dir}/default-compile-flags.txt" "/GS"
@@ -407,13 +409,15 @@ assert_contains "${action_dir}/pdb-opt-compile-flags.txt" "/O2"
 assert_contains "${action_dir}/pdb-opt-compile-flags.txt" "/Z7"
 assert_absent "${action_dir}/pdb-opt-compile-flags.txt" "-gcodeview"
 assert_contains "${action_dir}/pdb-opt-link-flags.txt" "/clang:/DEBUG"
-assert_contains "${action_dir}/archive.txt" "llvm-ar"
-assert_contains "${action_dir}/archive.txt" "rcsD"
-assert_contains "${action_dir}/archive.txt" "windows_msvc_libcxx_behavior_support.lib"
-assert_absent "${action_dir}/archive.txt" "llvm-lib"
+assert_contains "${action_dir}/archive.txt" "llvm-lib"
+assert_contains "${action_dir}/archive.txt" "/OUT:"
+assert_contains "${action_dir}/archive.txt" "windows_msvc_behavior_support.lib"
+assert_command_absent "${action_dir}/archive.txt" "llvm-ar"
 assert_absent "${action_dir}/staged-runtime-validation.txt" "Mnemonic: ValidateStaticLibrary"
 assert_contains "${action_dir}/complete-runtime-validation.txt" "Mnemonic: ValidateStaticLibrary"
-assert_contains "${action_dir}/complete-runtime-validation.txt" "static-library-validator"
+assert_matches "${action_dir}/complete-runtime-validation.txt" 'Command Line: \(exec .*static-library-validator'
+assert_matches "${action_dir}/complete-runtime-validation.txt" 'LLVM_NM=.*bin/llvm-nm'
+assert_matches "${action_dir}/complete-runtime-validation.txt" 'LLVM_CXXFILT=.*bin/c\+\+filt'
 
 assert_contains "${action_dir}/link.txt" "bin/clang-cl"
 assert_contains "${action_dir}/link.txt" "bin/lld-link"
@@ -424,6 +428,7 @@ assert_contains "${action_dir}/link.txt" "-rtlib=compiler-rt"
 assert_contains "${action_dir}/link.txt" "resource_directory_default"
 assert_contains "${action_dir}/link.txt" "libcxx_msvc_library_search_directory"
 assert_contains "${action_dir}/link.txt" "msvc_com_support_libraries"
+assert_contains "${action_dir}/link.txt" "msvc_common_support_libraries"
 assert_contains "${action_dir}/link.txt" "/clang:-Xlinker"
 assert_contains "${action_dir}/link.txt" "/clang:/vfsoverlay:"
 assert_contains "${action_dir}/link.txt" "msvc_sdk_library_case_overlay.yaml"
@@ -445,7 +450,7 @@ assert_absent "${action_dir}/link.txt" "/NODEFAULTLIB"
 assert_contains "${action_dir}/link.txt" "/clang:/DEFAULTLIB:libc++.lib"
 assert_before "${action_dir}/link.txt" "libcxx_msvc_library_search_directory" "/clang:/DEFAULTLIB:libc++.lib"
 assert_absent "${action_dir}/link.txt" "clang_rt.builtins.lib"
-assert_command_absent "${action_dir}/link.txt" "msvcrt.lib"
+assert_contains "${action_dir}/link.txt" "/clang:/DEFAULTLIB:msvcrt.lib"
 assert_command_absent "${action_dir}/link.txt" "msvcprt.lib"
 assert_absent "${action_dir}/link.txt" "libc++.dll"
 assert_absent "${action_dir}/link.txt" "libclang_rt.builtins.a"
@@ -566,7 +571,7 @@ assert_absent "${action_dir}/stage1-thin-lto-link.txt" "llvm-toolchain-minimal"
 assert_contains "${action_dir}/thin-lto-backend.txt" "CcLtoBackendCompile"
 assert_contains "${action_dir}/thin-lto-backend.txt" "bin/clang-cl"
 assert_contains "${action_dir}/thin-lto-backend.txt" "/clang:-fthinlto-index="
-assert_contains "${action_dir}/thin-lto-backend.txt" "windows_msvc_libcxx_behavior.obj"
+assert_contains "${action_dir}/thin-lto-backend.txt" "windows_msvc_behavior.obj"
 assert_contains "${action_dir}/thin-lto-backend.txt" "/clang:-fomit-frame-pointer"
 assert_absent "${action_dir}/thin-lto-backend.txt" "/clang:-nostdlibinc"
 assert_absent "${action_dir}/thin-lto-backend.txt" "/clang:-nobuiltininc"

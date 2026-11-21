@@ -1,10 +1,12 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("//constraints/libc:libc_versions.bzl", "GLIBCS", "LIBCS")
+load("//constraints/wasi:variants.bzl", "WASI_TARGET_TRIPLES")
 load("//constraints/windows/abi:abis.bzl", "WINDOWS_ABIS", "WINDOWS_MINGW_COMPATIBLE_ABIS")
 load("//platforms:common.bzl", "LIBC_SUPPORTED_TARGETS", "SUPPORTED_TARGETS", "WINDOWS_TARGETS")
 load("//toolchain:bootstrap_stages.bzl", "BOOTSTRAP_STAGES")
 
 def declare_config_settings():
+    # type: () -> None
     for (target_os, target_cpu) in SUPPORTED_TARGETS:
         native.config_setting(
             name = "{}_{}".format(target_os, target_cpu),
@@ -30,8 +32,32 @@ def declare_config_settings():
 
     declare_config_settings_libc_aware()
     declare_config_settings_windows_abi_aware()
+    declare_config_settings_wasi()
+
+def declare_config_settings_wasi():
+    # type: () -> None
+    for variant in WASI_TARGET_TRIPLES:
+        native.config_setting(
+            name = "wasi_wasm32_" + variant,
+            constraint_values = [
+                "@platforms//cpu:wasm32",
+                "@platforms//os:wasi",
+                "//constraints/wasi:" + variant,
+            ],
+            visibility = ["//visibility:public"],
+        )
+
+    selects.config_setting_group(
+        name = "wasi_components",
+        match_any = [
+            ":wasi_wasm32_p2",
+            ":wasi_wasm32_p3",
+        ],
+        visibility = ["//visibility:public"],
+    )
 
 def declare_config_settings_libc_aware():
+    # type: () -> None
     for (target_os, target_cpu) in LIBC_SUPPORTED_TARGETS:
         for libc in LIBCS + ["unconstrained"]:
             native.config_setting(
@@ -75,6 +101,7 @@ def declare_config_settings_libc_aware():
     )
 
 def declare_config_settings_windows_abi_aware():
+    # type: () -> None
     for target_os, target_cpu in WINDOWS_TARGETS:
         for abi in WINDOWS_ABIS:
             native.config_setting(

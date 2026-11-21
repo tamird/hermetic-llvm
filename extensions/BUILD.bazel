@@ -13,6 +13,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//private:llvm_project_archive",
+        "//private:llvm_project_common",
         "//private:llvm_project_from_git",
         "//private:llvm_project_from_path",
         "@bazel_skylib//lib:structs",
@@ -23,6 +24,19 @@ bzl_library(
 bzl_library(
     name = "llvm_toolchain_minimal",
     srcs = ["llvm_toolchain_minimal.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_features//:features",
+        "@bazel_tools//tools/build_defs/repo:cache.bzl",
+        "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "@bazel_tools//tools/build_defs/repo:utils.bzl",
+        "@llvm_version//:version",
+    ],
+)
+
+bzl_library(
+    name = "flang_toolchain_minimal",
+    srcs = ["flang_toolchain_minimal.bzl"],
     visibility = ["//visibility:public"],
     deps = [
         "@bazel_features//:features",

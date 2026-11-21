@@ -4,7 +4,7 @@ ARCH_ALIASES = {
     "riscv64": [],
     "s390x": [],
     "armv7": [],
-}
+}  # type: dict[str, list[str]]
 
 SUPPORTED_TARGETS = [
     ("macos", "x86_64"),
@@ -22,6 +22,7 @@ SUPPORTED_TARGETS = [
     ("none", "bpfel"),
     ("none", "wasm32"),
     ("none", "wasm64"),
+    ("wasi", "wasm32"),
 ]
 
 SUPPORTED_EXECS = [

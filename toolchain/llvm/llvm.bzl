@@ -3,12 +3,14 @@ load("@llvm//runtimes:module_map.bzl", "include_path", "module_map")
 load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("@rules_cc//cc/toolchains:tool_map.bzl", "cc_tool_map")
 load("//:directory.bzl", "headers_directory")
+load(":component_tools.bzl", "component_tools")
 
 _VALIDATE_STATIC_LIBRARY_TOOL = {
     "@rules_cc//cc/toolchains/actions:validate_static_library": ":static_library_validator",
 } if bazel_features.cc.supports_starlarkified_toolchains else {}
 
-def declare_llvm_targets(*, suffix = ""):
+def declare_llvm_targets(*, exec_os, exec_cpu, suffix = ""):
+    # type: (str, str, str) -> None
     """Declares the Bazel interface of one installed LLVM distribution.
 
     The bin/* tools and lib/clang/* resource headers below come from the same
@@ -105,6 +107,17 @@ def declare_llvm_targets(*, suffix = ""):
         format = {"llvm_nm": "bin/llvm-nm" + suffix},
     )
 
+    cc_tool(
+        name = "mingw_def_file_generator",
+        src = "@llvm//tools/def_file_generator",
+        data = ["bin/llvm-nm" + suffix],
+        env = {
+            "DEF_FILE_GENERATOR_ABI": "gnu",
+            "LLVM_NM": "{llvm_nm}",
+        },
+        format = {"llvm_nm": "bin/llvm-nm" + suffix},
+    )
+
     TOOLS_WITHOUT_LINKER = {
         "@rules_cc//cc/toolchains/actions:assembly_actions": ":clang",
         "@rules_cc//cc/toolchains/actions:c_compile": ":clang",
@@ -131,6 +144,18 @@ def declare_llvm_targets(*, suffix = ""):
         "@rules_cc//cc/toolchains/actions:cpp_header_parsing": ":header_parser",
     } | _VALIDATE_STATIC_LIBRARY_TOOL
 
+    component_tools(
+        name = "wasi_component_tools_for_runtime",
+        exec_os = exec_os,
+        exec_cpu = exec_cpu,
+        clang = "bin/clang++" + suffix,
+        wasm_ld = "bin/wasm-ld" + suffix,
+        base_tools = BASE_TOOLS | {
+            "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
+        },
+        complete_only_tools = COMPLETE_ONLY_TOOLS,
+    )
+
     cc_tool_map(
         name = "default_tools",
         tools = BASE_TOOLS | COMPLETE_ONLY_TOOLS | {
@@ -142,14 +167,14 @@ def declare_llvm_targets(*, suffix = ""):
     # MSVC ABI actions use the CL/LINK dialect directly. Keep this map separate
     # from MinGW so target ABI, never execution OS, selects the personality.
     MSVC_CONSTRUCTION_TOOLS = {
-        "@rules_cc//cc/toolchains/actions:assemble": ":clang-cl",
+        "@rules_cc//cc/toolchains/actions:assemble": ":msvc-assembler",
         "@rules_cc//cc/toolchains/actions:c_compile": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_compile": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:linkstamp_compile": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:lto_backend": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:preprocess_assemble": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_header_parsing": ":clang-cl",
-        "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-lib",
         "@rules_cc//cc/toolchains/actions:cpp_link_executable": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_link_dynamic_library": ":clang-cl",
         "@rules_cc//cc/toolchains/actions:cpp_link_nodeps_dynamic_library": ":clang-cl",
@@ -229,6 +254,24 @@ def declare_llvm_targets(*, suffix = ""):
         visibility = ["//visibility:public"],
     )
 
+    cc_tool_map(
+        name = "tools_for_mingw",
+        tools = BASE_TOOLS | COMPLETE_ONLY_TOOLS | {
+            "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
+            "@rules_cc//cc/toolchains/actions:generate_def_file": ":mingw_def_file_generator",
+        },
+        visibility = ["//visibility:public"],
+    )
+
+    native.alias(
+        name = "tools_for_mingw_for_runtime",
+        actual = select({
+            "@llvm//toolchain:runtimes_all": ":tools_for_mingw",
+            "//conditions:default": ":staged_default_tools",
+        }),
+        visibility = ["//visibility:public"],
+    )
+
     native.alias(
         name = "tools_with_libtool_for_runtime",
         actual = select({
@@ -300,6 +343,27 @@ def declare_llvm_targets(*, suffix = ""):
             # Presence suppresses clang-cl's Visual Studio library probing;
             # /lldignoreenv prevents the child linker from consuming it.
             "LIB": "__hermetic_llvm_empty_lib__",
+        },
+        allowlist_include_directories = builtin_resource_allowlist_directories,
+    )
+
+    # Assembles MASM (.asm) sources with llvm-ml and all others with clang-cl.
+    cc_tool(
+        name = "msvc-assembler",
+        src = "@llvm//tools/internal:msvc-assembler",
+        data = [
+            ":builtin_resource_dir",
+            "bin/clang-cl" + suffix,
+            "bin/llvm-ml" + suffix,
+        ],
+        env = {
+            "LIB": "__hermetic_llvm_empty_lib__",
+            "LLVM_CLANG_CL": "{clang_cl}",
+            "LLVM_ML": "{llvm_ml}",
+        },
+        format = {
+            "clang_cl": "bin/clang-cl" + suffix,
+            "llvm_ml": "bin/llvm-ml" + suffix,
         },
         allowlist_include_directories = builtin_resource_allowlist_directories,
     )
@@ -384,6 +448,13 @@ def declare_llvm_targets(*, suffix = ""):
     )
 
     cc_tool(
+        name = "llvm-lib",
+        src = "bin/llvm-lib" + suffix,
+        # Input lookup must not fall back to ambient Visual Studio libraries.
+        env = {"LIB": "__hermetic_llvm_empty_lib__"},
+    )
+
+    cc_tool(
         name = "llvm-libtool-darwin",
         src = "bin/llvm-libtool-darwin" + suffix,
     )
@@ -441,6 +512,9 @@ def declare_llvm_targets(*, suffix = ""):
             ":builtin_resource_include_dir",
             "@macos_sdk//sysroot",
             "@llvm//sanitizers:sanitizers_headers_include_search_directory",
+            # Match the libc++ include paths.
+            "@llvm//runtimes/cxxstdlib:public_headers_directory",
+            "@llvm//runtimes/cxxstdlib:detail_headers_directory",
         ],
     )
 
@@ -451,8 +525,7 @@ def declare_llvm_targets(*, suffix = ""):
             ":builtin_resource_include_dir",
         ] + select({
             "@llvm//toolchain:runtimes_all": [
-                "@llvm//runtimes/cxxstdlib:headers_include_search_directory",
-                "@llvm//runtimes/cxxstdlib:abi_headers_include_search_directory",
+                "@llvm//runtimes/cxxstdlib:default_headers",
             ],
             "//conditions:default": [],
         }) + [
@@ -475,8 +548,7 @@ def declare_llvm_targets(*, suffix = ""):
             ":builtin_resource_include_dir",
         ] + select({
             "@llvm//toolchain:runtimes_all": [
-                "@llvm//runtimes/cxxstdlib:headers_include_search_directory",
-                "@llvm//runtimes/cxxstdlib:abi_headers_include_search_directory",
+                "@llvm//runtimes/cxxstdlib:default_headers",
             ],
             "//conditions:default": [],
         }) + [
@@ -493,8 +565,7 @@ def declare_llvm_targets(*, suffix = ""):
             ":builtin_resource_dir",
         ] + select({
             "@llvm//toolchain:runtimes_all": [
-                "@llvm//runtimes/cxxstdlib:headers_include_search_directory",
-                "@llvm//runtimes/cxxstdlib:abi_headers_include_search_directory",
+                "@llvm//runtimes/cxxstdlib:default_headers",
             ],
             "//conditions:default": [],
         }),
@@ -504,8 +575,16 @@ def declare_llvm_targets(*, suffix = ""):
         name = "wasm_target_headers",
         srcs = [
             ":builtin_resource_include_dir",
-            # TODO(zbarsky): We'll want to add wasi libc headers here.
         ],
+    )
+
+    include_path(
+        name = "wasi_target_headers",
+        srcs = [":builtin_resource_include_dir"] + select({
+            "@llvm//toolchain:runtimes_all": ["@llvm//runtimes/wasi:wasi_headers_include_search_directory"],
+            "@llvm//toolchain:runtimes_stage1_hosted": ["@llvm//runtimes/wasi:wasi_headers_include_search_directory"],
+            "//conditions:default": [],
+        }),
     )
 
     module_map(
@@ -516,6 +595,7 @@ def declare_llvm_targets(*, suffix = ""):
             "@platforms//os:windows": ":windows_target_headers",
             "@platforms//os:uefi": ":uefi_target_headers",
             "@platforms//os:none": ":wasm_target_headers",
+            "@platforms//os:wasi": ":wasi_target_headers",
         }),
         # The generator is built with the stage1_hosted toolchain, whose own
         # module map thus can't depend on it.

@@ -1,6 +1,17 @@
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
 
 package(default_visibility = ["//visibility:public"])
+
+# Use separate public and detail header directories for libc++ modules.
+# libstdc++ keeps a single directory.
+cc_args_list(
+    name = "cxxstdlib_headers_include_search_paths",
+    args = select({
+        "//runtimes/cxxstdlib:libstdcxx_linux": ["//toolchain/args:default_cxxstdlib_headers_include_search_paths"],
+        "//conditions:default": ["//toolchain/args:split_cxxstdlib_headers_include_search_paths"],
+    }),
+)
 
 # Extracted from rules_cc unix_cc_configure.bzl
 # TODO(cerisier): Extract those into proper semantic args list.
@@ -12,6 +23,9 @@ cc_args(
     args = [
         "-Wl,-no-as-needed",
         "-Wl,-z,relro,-z,now",
+        # Distribution GCC and Clang builds emit a build ID by default. The
+        # SHA-1 of the output is deterministic, unlike --build-id=uuid.
+        "-Wl,--build-id=sha1",
     ],
 )
 
@@ -37,10 +51,16 @@ cc_args(
     allowlist_include_directories = [
         "@kernel_headers//:kernel_headers_directory",
     ],
-    args = [
-        "-isystem",
-        "{kernel_headers_include_search_path}",
-    ],
+    # Preserve musl's existing include flags. GNU uses the driver's native
+    # extern-C category after builtins.
+    args = select({
+        "//platforms/config:musl": ["-isystem"],
+        "//conditions:default": [
+            "-Xclang",
+            "-internal-externc-isystem",
+            "-Xclang",
+        ],
+    }) + ["{kernel_headers_include_search_path}"],
     data = [
         "@kernel_headers//:kernel_headers_directory",
     ],
@@ -59,10 +79,20 @@ cc_args(
         "//runtimes/glibc:glibc_headers_include_search_directory",
     ],
     args = [
-        # "__GLIBC_MINOR__={d}", version.minor
-        "-isystem",
+        "-Xclang",
+        "-internal-externc-isystem",
+        "-Xclang",
         "{libc_headers_include_search_path}",
-    ],
+    ] + select({
+        # glibc 2.17 hides the C99 integer macros in C++ unless requested.
+        # Modern libc++ expects them unconditionally, as glibc >= 2.18 does.
+        "//constraints/libc:gnu.2.17": [
+            "-D__STDC_CONSTANT_MACROS",
+            "-D__STDC_LIMIT_MACROS",
+            "-D__STDC_FORMAT_MACROS",
+        ],
+        "//conditions:default": [],
+    }),
     data = [
         "//runtimes/glibc:glibc_headers_include_search_directory",
     ],

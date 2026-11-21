@@ -1,10 +1,43 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
 load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
 load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
 
 package(default_visibility = ["//visibility:public"])
+
+# GNU-driver response-file syntax is independent of target OS and runtime stage.
+# clang-cl's separate protocol composition selects Windows quoting instead.
+cc_feature(
+    name = "gcc_quoting_for_param_files",
+    feature_name = "gcc_quoting_for_param_files",
+)
+
+# CreateProcessW limits a command line to 32,767 characters. That limit belongs
+# to the execution platform, not the target: compiling for Linux or macOS on a
+# Windows host is subject to it too. Toolchains that execute on Windows enable
+# both features below regardless of target, and clang-cl enables them for every
+# execution platform.
+cc_feature(
+    name = "compiler_param_file",
+    feature_name = "compiler_param_file",
+)
+
+# Takes precedence over compiler_param_file in Bazel versions that support it,
+# so that param files are only used for long command lines.
+cc_feature(
+    name = "compiler_param_file_on_demand",
+    feature_name = "compiler_param_file_on_demand",
+)
+
+cc_feature_set(
+    name = "compiler_param_file_features",
+    all_of = [
+        ":compiler_param_file",
+        ":compiler_param_file_on_demand",
+    ],
+)
 
 _DEBUG_INFO_COMPILE_ACTIONS = [
     "@rules_cc//cc/toolchains/actions:c_compile",
@@ -47,6 +80,30 @@ _FINAL_LINK_ACTIONS = [
 cc_feature(
     name = "static_link_cpp_runtimes",
     overrides = "@rules_cc//cc/toolchains/features:static_link_cpp_runtimes",
+)
+
+# Bazel requires this feature to create shared cc_library outputs.
+cc_feature(
+    name = "supports_dynamic_linker",
+    feature_name = "supports_dynamic_linker",
+)
+
+# Temporary implementation boundary: musl has shared libc/loader targets, but
+# the consumer path still exposes only libc.a and forces static executables.
+# Enable musl here when that integration is complete; libc choice itself does
+# not determine whether a target supports dynamic linking.
+cc_feature_set(
+    name = "hosted_dynamic_linker",
+    all_of = select({
+        "//constraints/libc:musl": [],
+        # Nodeps dylibs omit dependencies, leaving unresolved symbols on macOS.
+        # https://github.com/hermeticbuild/hermetic-llvm/issues/893
+        "@platforms//os:macos": [],
+        "@platforms//os:uefi": [],
+        "@platforms//os:none": [],
+        "@platforms//os:wasi": [],
+        "//conditions:default": [":supports_dynamic_linker"],
+    }),
 )
 
 cc_args(
@@ -547,41 +604,49 @@ cc_feature(
     feature_name = "generate_pdb_file",
 )
 
-# TODO: Remove after https://github.com/bazelbuild/rules_cc/pull/385
+# Requested whenever coverage is enabled. The toolchain has to define a feature
+# with this name, otherwise rules_cc adds its own legacy coverage,
+# llvm_coverage_map_format and gcc_coverage_map_format features, which clash
+# with the ones below.
 cc_feature(
-    name = "coverage_stub",
+    name = "coverage",
     overrides = "@rules_cc//cc/toolchains/features/legacy:coverage",
 )
 
+# Requested by rules_cc 0.2.26+ whenever coverage is enabled.
+# TODO: Override the rules_cc feature after https://github.com/bazelbuild/rules_cc/pull/988.
+cc_feature(
+    name = "coverage_enabled",
+    feature_name = "coverage_enabled",
+)
+
+# Requested by rules_cc 0.2.26+ only for targets that are instrumented for
+# coverage, i.e. that match --instrumentation_filter or have a direct dependency
+# that does.
+# TODO: Override the rules_cc feature after https://github.com/bazelbuild/rules_cc/pull/988.
+cc_feature(
+    name = "coverage_instrumented",
+    feature_name = "coverage_instrumented",
+)
+
+# Bazel 8 doesn't request coverage_enabled and coverage_instrumented, so
+# instrument every target there.
+cc_feature_constraint(
+    name = "coverage_instrumentation_unknown",
+    none_of = [":coverage_enabled"],
+)
+
+# Compile arguments of the coverage format features are restricted to
+# instrumented targets, while link arguments apply whenever coverage is enabled:
+# a binary that isn't instrumented itself can still link instrumented libraries.
 cc_feature(
     name = "llvm_coverage_map_format",
     args = [
-        ":llvm_coverage_map_format_compile_args",
-        ":llvm_coverage_map_format_link_args",
+        "//toolchain/args:llvm_coverage_map_format_compile_args",
+        "//toolchain/args:llvm_coverage_map_format_link_args",
     ],
     overrides = "@rules_cc//cc/toolchains/features/legacy:llvm_coverage_map_format",
-    requires_any_of = [":coverage_stub"],
-)
-
-cc_args(
-    name = "llvm_coverage_map_format_compile_args",
-    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
-    args = [
-        "-fprofile-instr-generate",
-        "-fcoverage-mapping",
-    ],
-)
-
-cc_args(
-    name = "llvm_coverage_map_format_link_args",
-    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
-    args = ["-fprofile-instr-generate"] + select({
-        "@platforms//os:windows": [
-            "-Wl,-u,__llvm_profile_runtime",
-            "-Wl,/include:__llvm_profile_runtime",
-        ],
-        "//conditions:default": [],
-    }),
+    requires_any_of = [":coverage"],
 )
 
 cc_feature(
@@ -591,7 +656,7 @@ cc_feature(
         ":gcc_coverage_map_format_link_args",
     ],
     overrides = "@rules_cc//cc/toolchains/features/legacy:gcc_coverage_map_format",
-    requires_any_of = [":coverage_stub"],
+    requires_any_of = [":coverage"],
 )
 
 cc_args(
@@ -600,6 +665,10 @@ cc_args(
     args = [
         "-fprofile-arcs",
         "-ftest-coverage",
+    ],
+    requires_any_of = [
+        ":coverage_instrumented",
+        ":coverage_instrumentation_unknown",
     ],
 )
 
@@ -622,25 +691,36 @@ cc_args(
 )
 
 cc_feature(
+    name = "fdo_instrument",
+    args = [
+        "//toolchain/args:fdo_instrument_args",
+        "//toolchain/args:profile_runtime_windows_linker_flags",
+    ],
+    overrides = "@rules_cc//cc/toolchains/features/legacy:fdo_instrument",
+)
+
+cc_feature(
+    name = "cs_fdo_instrument",
+    args = [
+        "//toolchain/args:cs_fdo_instrument_args",
+        "//toolchain/args:cs_fdo_instrument_macos_linker_flags",
+        "//toolchain/args:profile_runtime_windows_linker_flags",
+    ],
+    overrides = "@rules_cc//cc/toolchains/features/legacy:cs_fdo_instrument",
+)
+
+cc_feature(
     name = "fdo_optimize",
-    args = [":fdo_optimize_compile_args"],
+    args = ["//toolchain/args:fdo_optimize_compile_args"],
     overrides = "@rules_cc//cc/toolchains/features/legacy:fdo_optimize",
 )
 
-cc_args(
-    name = "fdo_optimize_compile_args",
-    actions = [
-        "@rules_cc//cc/toolchains/actions:compile_actions",
-    ],
-    args = [
-        "-fprofile-use={fdo_profile_path}",
-        "-Wno-profile-instr-unprofiled",
-        "-Wno-profile-instr-out-of-date",
-    ],
-    format = {
-        "fdo_profile_path": "@rules_cc//cc/toolchains/variables:fdo_profile_path",
-    },
-    requires_not_none = "@rules_cc//cc/toolchains/variables:fdo_profile_path",
+# rules_cc gates the merged profile input and fdo_profile_path for ThinLTO
+# backends on this feature. fdo_optimize already emits the argument for
+# compile_actions, which includes lto_backend.
+cc_feature(
+    name = "cs_fdo_optimize",
+    overrides = "@rules_cc//cc/toolchains/features/legacy:cs_fdo_optimize",
 )
 
 cc_args(
@@ -698,7 +778,9 @@ cc_feature_set(
         ":fastbuild_stub",
         ":static_link_cpp_runtimes",
         ":parse_headers",
-        ":coverage_stub",
+        ":coverage",
+        ":coverage_enabled",
+        ":coverage_instrumented",
         ":llvm_coverage_map_format",
         ":gcc_coverage_map_format",
         ":fully_static_link",

@@ -9,7 +9,7 @@ local_path_override(
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_cc", version = "0.2.25")
+bazel_dep(name = "rules_cc", version = "0.2.28")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.12.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
@@ -36,3 +36,6 @@ register_toolchains("@llvm_toolchains//:all")
 
 # Bump transitive zlib version to avoid genrules.
 bazel_dep(name = "zlib", version = "1.3.1.bcr.8")
+
+sty_stubs = use_extension("@llvm//stubs:extensions.bzl", "sty_stubs", dev_dependency = True)
+use_repo(sty_stubs, "bazel_skylib_stubs")

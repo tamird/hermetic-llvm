@@ -1,3 +1,4 @@
+load("@bazel_features//:features.bzl", "bazel_features")
 load("//platforms:common.bzl", "MSVC_TARGET_STAGE0_SUPPORTED_EXECS", "SUPPORTED_EXECS", "SUPPORTED_TARGETS")
 load("//toolchain:merged_resource_directory.bzl", "merged_resource_directory")
 load("//toolchain:selects.bzl", "platform_cc_tool_map", "platform_module_map", "platform_resource_dir")
@@ -13,6 +14,7 @@ def declare_toolchains(*, execs = SUPPORTED_EXECS, targets = SUPPORTED_TARGETS):
     """
     for (exec_os, exec_cpu) in execs:
         cc_toolchain_name = exec_os + "_" + exec_cpu + "_cc_toolchain"
+        msvc_case_overlays = [] if exec_os == "windows" else ["@llvm//toolchain/args/windows/msvc:case_overlays"]
 
         # Bind the directory beside the tool map, before another rule's exec
         # transition can select a different compiler installation.
@@ -34,6 +36,11 @@ def declare_toolchains(*, execs = SUPPORTED_EXECS, targets = SUPPORTED_TARGETS):
             name = cc_toolchain_name,
             tool_map = platform_cc_tool_map(exec_os, exec_cpu),
             module_map = platform_module_map(exec_os, exec_cpu),
+            # llvm-ar's default response-file parser follows the execution OS.
+            supports_gnu_param_file_quoting = exec_os in ["linux", "macos"],
+            # Windows process creation limits command lines to 32,767
+            # characters, whichever OS the action targets.
+            requires_compiler_param_files = exec_os == "windows",
             # Paths below describe the concrete execution filesystem. Keep
             # target semantics in //toolchain's ordered argument composition.
             extra_args = select({
@@ -43,11 +50,11 @@ def declare_toolchains(*, execs = SUPPORTED_EXECS, targets = SUPPORTED_TARGETS):
                 "@llvm//platforms/config:windows_x86_64_msvc": [
                     "@llvm//toolchain/args/windows/msvc:normalized_default_libs_for_runtime",
                     "@llvm//toolchain/args/windows/msvc:normalized_sdk_compile_args",
-                ],
+                ] + msvc_case_overlays,
                 "@llvm//platforms/config:windows_aarch64_msvc": [
                     "@llvm//toolchain/args/windows/msvc:normalized_default_libs_for_runtime",
                     "@llvm//toolchain/args/windows/msvc:normalized_sdk_compile_args",
-                ],
+                ] + msvc_case_overlays,
                 "//conditions:default": [],
             }),
         )
@@ -92,3 +99,27 @@ def declare_toolchains(*, execs = SUPPORTED_EXECS, targets = SUPPORTED_TARGETS):
                     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
                     visibility = ["//visibility:public"],
                 )
+
+    # Attach libc++ to user targets through the runtime toolchain in Bazel 9+.
+    # Runtime builds must not depend on this toolchain themselves. WASI and
+    # bare-metal platforms match the default libc++ constraint value, but have
+    # no hermetic C++ standard library.
+    if bazel_features.cc.cc_common_is_in_rules_cc:
+        cxxstdlib_oses = {
+            target_os: None
+            for (target_os, _) in targets
+            if target_os not in ["none", "wasi"]
+        }
+        for target_os in cxxstdlib_oses:
+            native.toolchain(
+                name = "cc_runtimes_" + target_os,
+                target_compatible_with = [
+                    "@platforms//os:" + target_os,
+                    "@llvm//constraints/cxxstdlib:libcxx",
+                ],
+                target_settings = ["@llvm//toolchain:runtimes_all"],
+                toolchain = "@llvm//toolchain/cc_runtimes:runtimes",
+                # This is the defining target; rules_cc 0.2.25 has no alias for it.
+                toolchain_type = "@bazel_tools//tools/cpp:cc_runtimes_toolchain_type",
+                visibility = ["//visibility:public"],
+            )

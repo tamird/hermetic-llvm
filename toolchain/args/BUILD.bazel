@@ -19,6 +19,16 @@ _CLANG_CL_CXX_FRONTEND_ACTIONS = [
     "@rules_cc//cc/toolchains/actions:linkstamp_compile",
 ]
 
+# Exclude LTO and module codegen actions, which warn about unused -I flags.
+_CXX_COMPILE_ACTIONS = [
+    "@rules_cc//cc/toolchains/actions:linkstamp_compile",
+    "@rules_cc//cc/toolchains/actions:cpp_compile",
+    "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    "@rules_cc//cc/toolchains/actions:cpp_module_compile",
+    "@rules_cc//cc/toolchains/actions:clif_match",
+    "@rules_cc//cc/toolchains/actions:objcpp_compile",
+]
+
 # COMMON RESET FLAGS
 # --no-default-config
 # -fno-spell-checking
@@ -134,10 +144,8 @@ cc_args(
     }),
 )
 
-# Toolchain args gated on the header_module_compile feature rather than args
-# of the feature: toolchain args render before any feature's args, and the
-# positional `-x` flag has to precede the `-c <source>` emitted by the legacy
-# features.
+# Toolchain arguments precede feature arguments, keeping -x before the source
+# path emitted by the legacy features.
 cc_args(
     name = "header_module_compile",
     actions = ["@rules_cc//cc/toolchains/actions:cpp_module_compile"],
@@ -153,25 +161,81 @@ cc_args(
     requires_any_of = ["//toolchain/features/header_modules:header_module_compile"],
 )
 
+# Explicit C++ roots replace Darwin's SDK libc++ discovery. Finding both
+# copies would break the C wrappers' include_next chain because their shared
+# include guards suppress the second copy.
 cc_args(
-    name = "cxxstdlib_headers_include_search_paths",
-    actions = [
-        # cpp_compile_actions - lto_backend - cpp_module_codegen
-        # Omitted to avoid unused arg warning for -I paths.
-        "@rules_cc//cc/toolchains/actions:linkstamp_compile",
-        "@rules_cc//cc/toolchains/actions:cpp_compile",
-        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
-        "@rules_cc//cc/toolchains/actions:cpp_module_compile",
-        "@rules_cc//cc/toolchains/actions:clif_match",
-        "@rules_cc//cc/toolchains/actions:objcpp_compile",
-    ],
+    name = "macos_cxxstdlib_headers_include_search_paths",
+    actions = _CXX_COMPILE_ACTIONS,
     args = [
-        "-isystem",
-        "{cxxstdlib_headers_include_search_path}",
-        "-isystem",
-        "{cxxstdlib_abi_headers_include_search_path}",
+        "-stdlib++-isystem{cxx_public_headers_include_search_path}",
+        "-stdlib++-isystem{cxx_detail_headers_include_search_path}",
     ],
-    # Do not sort: keep the data order aligned with the argument order above.
+    # Keep data in the same order as the arguments.
+    # do not sort
+    data = [
+        "//runtimes/cxxstdlib:public_headers_directory",
+        "//runtimes/cxxstdlib:detail_headers_directory",
+    ],
+    format = {
+        "cxx_public_headers_include_search_path": "//runtimes/cxxstdlib:public_headers_directory",
+        "cxx_detail_headers_include_search_path": "//runtimes/cxxstdlib:detail_headers_directory",
+    },
+)
+
+# //runtimes/cxxstdlib:libcxx_headers.bzl splits public and detail headers.
+cc_args(
+    name = "split_cxxstdlib_headers_include_search_paths",
+    actions = _CXX_COMPILE_ACTIONS,
+    # Keep musl's C++ -> C -> builtin order. Other targets use the driver
+    # category so user headers and libc++ wrappers retain their precedence.
+    args = select({
+        "//platforms/config:musl": [
+            "-isystem",
+            "{cxx_public_headers_include_search_path}",
+            "-isystem",
+            "{cxx_detail_headers_include_search_path}",
+            "-isystem",
+            "{cxxstdlib_abi_headers_include_search_path}",
+        ],
+        "//conditions:default": [
+            "-stdlib++-isystem{cxx_public_headers_include_search_path}",
+            "-stdlib++-isystem{cxx_detail_headers_include_search_path}",
+            "-stdlib++-isystem{cxxstdlib_abi_headers_include_search_path}",
+        ],
+    }),
+    # Keep data in the same order as the arguments.
+    # do not sort
+    data = [
+        "//runtimes/cxxstdlib:public_headers_directory",
+        "//runtimes/cxxstdlib:detail_headers_directory",
+        "//runtimes/cxxstdlib:abi_headers_include_search_directory",
+    ],
+    format = {
+        "cxx_public_headers_include_search_path": "//runtimes/cxxstdlib:public_headers_directory",
+        "cxx_detail_headers_include_search_path": "//runtimes/cxxstdlib:detail_headers_directory",
+        "cxxstdlib_abi_headers_include_search_path": "//runtimes/cxxstdlib:abi_headers_include_search_directory",
+    },
+)
+
+# libstdc++ retains its single directory.
+cc_args(
+    name = "default_cxxstdlib_headers_include_search_paths",
+    actions = _CXX_COMPILE_ACTIONS,
+    args = select({
+        "//platforms/config:musl": [
+            "-isystem",
+            "{cxxstdlib_headers_include_search_path}",
+            "-isystem",
+            "{cxxstdlib_abi_headers_include_search_path}",
+        ],
+        "//conditions:default": [
+            "-stdlib++-isystem{cxxstdlib_headers_include_search_path}",
+            "-stdlib++-isystem{cxxstdlib_abi_headers_include_search_path}",
+        ],
+    }),
+    # Keep data in the same order as the arguments.
+    # do not sort
     data = [
         "//runtimes/cxxstdlib:headers_include_search_directory",
         "//runtimes/cxxstdlib:abi_headers_include_search_directory",
@@ -183,14 +247,15 @@ cc_args(
 )
 
 cc_args(
-    name = "clang_cl_cxxstdlib_headers_include_search_paths",
+    name = "default_clang_cl_cxxstdlib_headers_include_search_paths",
     actions = _CLANG_CL_CXX_FRONTEND_ACTIONS,
     args = select({
-        # /imsvc comes after implicit builtins. libc++ wrappers must precede
-        # them, so use the Clang system-include category instead.
+        "//toolchain/args/windows/msvc:msvcstl_default_headers": [
+            "/imsvc{cxxstdlib_headers_include_search_path}",
+        ],
+        # Let the driver place libc++ wrappers before builtin and C headers.
         "//toolchain:runtimes_all": [
-            "/clang:-isystem",
-            "/clang:{cxxstdlib_headers_include_search_path}",
+            "/clang:-stdlib++-isystem{cxxstdlib_headers_include_search_path}",
         ],
         "//conditions:default": [],
     }),
@@ -201,6 +266,38 @@ cc_args(
     format = {
         "cxxstdlib_headers_include_search_path": "//runtimes/cxxstdlib:headers_include_search_directory",
     },
+)
+
+cc_args(
+    name = "nostdincxx",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:linkstamp_compile",
+        "@rules_cc//cc/toolchains/actions:cpp_compile",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+        "@rules_cc//cc/toolchains/actions:cpp_module_compile",
+        "@rules_cc//cc/toolchains/actions:clif_match",
+        "@rules_cc//cc/toolchains/actions:objcpp_compile",
+    ],
+    args = select({
+        "//constraints/windows/abi:msvc": ["/clang:-nostdinc++"],
+        "//conditions:default": ["-nostdinc++"],
+    }),
+)
+
+cc_args_list(
+    name = "cxxstdlib_headers_include_search_paths",
+    args = select({
+        "//config:nostdincxx_enabled": ["nostdincxx"],
+        "//conditions:default": ["//toolchain/args/linux:cxxstdlib_headers_include_search_paths"],
+    }),
+)
+
+cc_args_list(
+    name = "clang_cl_cxxstdlib_headers_include_search_paths",
+    args = select({
+        "//config:nostdincxx_enabled": ["nostdincxx"],
+        "//conditions:default": ["default_clang_cl_cxxstdlib_headers_include_search_paths"],
+    }),
 )
 
 alias(
@@ -260,7 +357,7 @@ cc_args_list(
 )
 
 cc_args(
-    name = "fuse_ld",
+    name = "fuse_lld",
     actions = [
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
@@ -275,6 +372,11 @@ cc_args(
             # "--ld-path={lld_path}",
         ],
     }),
+)
+
+alias(
+    name = "fuse_ld",
+    actual = "fuse_lld",
 )
 
 cc_args(
@@ -320,7 +422,7 @@ cc_args(
 #######
 
 cc_args(
-    name = "ubsan_compiler_flags",
+    name = "_ubsan_compiler_flags",
     actions = [
         "@rules_cc//cc/toolchains/actions:compile_actions",
     ],
@@ -333,19 +435,37 @@ cc_args(
     format = {
         "ubsan_ignore": "//sanitizers:ubsan_ignore",
     },
+    visibility = ["//visibility:private"],
+)
+
+cc_args_list(
+    name = "ubsan_compiler_flags",
+    args = [":_ubsan_compiler_flags"] + select({
+        "@platforms//os:wasi": ["//toolchain/args/wasi:ubsan_compiler_flags"],
+        "//conditions:default": [],
+    }),
 )
 
 # Note that sanitizers must use `cc_unsanitized_library` on third-party deps
 # if they end up depending on an exec-configure binary, as linking that binary can fail
 # since it was compiled with sanitizer support but linked without it.
 cc_args(
-    name = "ubsan_linker_flags",
+    name = "_ubsan_linker_flags",
     actions = [
         "@rules_cc//cc/toolchains/actions:link_actions",
     ],
     args = [
         "-fsanitize=undefined",
     ],
+    visibility = ["//visibility:private"],
+)
+
+cc_args_list(
+    name = "ubsan_linker_flags",
+    args = [":_ubsan_linker_flags"] + select({
+        "@platforms//os:wasi": ["//toolchain/args/wasi:ubsan_linker_flags"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_args_list(
@@ -409,10 +529,6 @@ cc_args_list(
             ":cfi_compiler_flags",
             ":cfi_linker_flags",
         ],
-        "//config:host_cfi_enabled": [
-            ":cfi_compiler_flags",
-            ":cfi_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -447,10 +563,6 @@ cc_args_list(
     name = "msan_flags",
     args = select({
         "//config:msan_enabled": [
-            ":msan_compiler_flags",
-            ":msan_linker_flags",
-        ],
-        "//config:host_msan_enabled": [
             ":msan_compiler_flags",
             ":msan_linker_flags",
         ],
@@ -497,10 +609,6 @@ cc_args_list(
             ":dfsan_compiler_flags",
             ":dfsan_linker_flags",
         ],
-        "//config:host_dfsan_enabled": [
-            ":dfsan_compiler_flags",
-            ":dfsan_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -535,10 +643,6 @@ cc_args_list(
     name = "nsan_flags",
     args = select({
         "//config:nsan_enabled": [
-            ":nsan_compiler_flags",
-            ":nsan_linker_flags",
-        ],
-        "//config:host_nsan_enabled": [
             ":nsan_compiler_flags",
             ":nsan_linker_flags",
         ],
@@ -579,10 +683,6 @@ cc_args_list(
             ":safestack_compiler_flags",
             ":safestack_linker_flags",
         ],
-        "//config:host_safestack_enabled": [
-            ":safestack_compiler_flags",
-            ":safestack_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -617,10 +717,6 @@ cc_args_list(
     name = "rtsan_flags",
     args = select({
         "//config:rtsan_enabled": [
-            ":rtsan_compiler_flags",
-            ":rtsan_linker_flags",
-        ],
-        "//config:host_rtsan_enabled": [
             ":rtsan_compiler_flags",
             ":rtsan_linker_flags",
         ],
@@ -661,10 +757,6 @@ cc_args_list(
             ":tysan_compiler_flags",
             ":tysan_linker_flags",
         ],
-        "//config:host_tysan_enabled": [
-            ":tysan_compiler_flags",
-            ":tysan_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -699,10 +791,6 @@ cc_args_list(
     name = "tsan_flags",
     args = select({
         "//config:tsan_enabled": [
-            ":tsan_compiler_flags",
-            ":tsan_linker_flags",
-        ],
-        "//config:host_tsan_enabled": [
             ":tsan_compiler_flags",
             ":tsan_linker_flags",
         ],
@@ -743,10 +831,6 @@ cc_args_list(
             ":asan_compiler_flags",
             ":asan_linker_flags",
         ],
-        "//config:host_asan_enabled": [
-            ":asan_compiler_flags",
-            ":asan_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -781,10 +865,6 @@ cc_args_list(
     name = "lsan_flags",
     args = select({
         "//config:lsan_enabled": [
-            ":lsan_compiler_flags",
-            ":lsan_linker_flags",
-        ],
-        "//config:host_lsan_enabled": [
             ":lsan_compiler_flags",
             ":lsan_linker_flags",
         ],
@@ -823,10 +903,6 @@ cc_args_list(
             ":xray_compiler_flags",
             ":xray_linker_flags",
         ],
-        "//config:host_xray_enabled": [
-            ":xray_compiler_flags",
-            ":xray_linker_flags",
-        ],
         "//conditions:default": [],
     }),
 )
@@ -851,6 +927,15 @@ cc_args(
     ],
 )
 
+# Profiling arguments are collected here; their callers still choose when to
+# apply them. The custom profile/host_profile settings (including the LLVM
+# bootstrap) select frontend instrumentation. Native Bazel FDO features select
+# IR or context-sensitive IR instrumentation. Coverage selects frontend counters
+# with coverage mapping. Profile use is independent of how counters were collected.
+# These declarations do not choose a mode; the existing callers do.
+
+# Custom //config:profile and //config:host_profile, via :profile_flags below.
+# Runtime construction also uses the compile half on its own.
 cc_args(
     name = "profile_compiler_flags",
     actions = [
@@ -885,15 +970,102 @@ cc_args(
     }),
 )
 
+# Native --fdo_instrument: rules_cc enables the fdo_instrument feature and
+# supplies its output directory through fdo_instrument_path.
+cc_args(
+    name = "fdo_instrument_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-fprofile-generate={fdo_instrument_path}",
+    ],
+    format = {
+        "fdo_instrument_path": "@rules_cc//cc/toolchains/variables:fdo_instrument_path",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:fdo_instrument_path",
+)
+
+# Native --cs_fdo_instrument: late IR instrumentation, including ThinLTO
+# backends. Its output directory is supplied by rules_cc as a separate variable.
+cc_args(
+    name = "cs_fdo_instrument_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-fcs-profile-generate={cs_fdo_instrument_path}",
+    ],
+    format = {
+        "cs_fdo_instrument_path": "@rules_cc//cc/toolchains/variables:cs_fdo_instrument_path",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:cs_fdo_instrument_path",
+)
+
+# Under ThinLTO on macOS the thin link drops __llvm_profile_filename, so CS
+# profiles go to ./default.profraw instead of the --cs_fdo_instrument directory.
+cc_args(
+    name = "cs_fdo_instrument_macos_linker_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = select({
+        "@platforms//os:macos": ["-Wl,-u,___llvm_profile_filename"],
+        "//conditions:default": [],
+    }),
+)
+
+# The fdo_optimize feature consumes the profile selected by --fdo_profile or
+# --fdo_optimize. The LLVM bootstrap already uses this path for its merged data.
+cc_args(
+    name = "fdo_optimize_compile_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+    ],
+    args = [
+        "-fprofile-use={fdo_profile_path}",
+        "-Wno-profile-instr-unprofiled",
+        "-Wno-profile-instr-out-of-date",
+    ],
+    format = {
+        "fdo_profile_path": "@rules_cc//cc/toolchains/variables:fdo_profile_path",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:fdo_profile_path",
+)
+
+# Bazel coverage selects llvm_coverage_map_format, independently of the custom
+# profile settings and native FDO generation options.
+cc_args(
+    name = "llvm_coverage_map_format_compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
+    ],
+    requires_any_of = [
+        "//toolchain/features:coverage_instrumented",
+        "//toolchain/features:coverage_instrumentation_unknown",
+    ],
+)
+
+cc_args(
+    name = "llvm_coverage_map_format_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = ["-fprofile-instr-generate"] + select({
+        "@platforms//os:windows": [
+            "-Wl,-u,__llvm_profile_runtime",
+            "-Wl,/include:__llvm_profile_runtime",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 cc_args_list(
     name = "fuzzer_flags",
     args = select({
         "//config:fuzzer_enabled": [
-            ":fuzzer_compiler_flags",
-            ":fuzzer_linker_flags",
-            ":profile_runtime_windows_linker_flags",
-        ],
-        "//config:host_fuzzer_enabled": [
             ":fuzzer_compiler_flags",
             ":fuzzer_linker_flags",
             ":profile_runtime_windows_linker_flags",
@@ -904,13 +1076,10 @@ cc_args_list(
 
 cc_args_list(
     name = "profile_flags",
+    # profile_enabled selects profile for target configurations and host_profile
+    # for exec configurations; native FDO options are handled by their features.
     args = select({
         "//config:profile_enabled": [
-            ":profile_compiler_flags",
-            ":profile_linker_flags",
-            ":profile_runtime_windows_linker_flags",
-        ],
-        "//config:host_profile_enabled": [
             ":profile_compiler_flags",
             ":profile_linker_flags",
             ":profile_runtime_windows_linker_flags",
@@ -1045,13 +1214,18 @@ cc_args(
     ],
     # clang-cl rejects the common -L spelling in CL mode. Keep the common
     # declared directory model, but translate it to clang-cl/link syntax.
-    args = [
-        "/clang:-Xlinker",
-        "/clang:/LIBPATH:{cxxstdlib_library_search_path}",
-    ],
-    data = [
-        "//runtimes/cxxstdlib:library_search_directory",
-    ],
+    args = select({
+        # The selected CRT directory already contains the Microsoft STL.
+        "//constraints/cxxstdlib:msvcstl": [],
+        "//conditions:default": [
+            "/clang:-Xlinker",
+            "/clang:/LIBPATH:{cxxstdlib_library_search_path}",
+        ],
+    }),
+    data = select({
+        "//constraints/cxxstdlib:msvcstl": [],
+        "//conditions:default": ["//runtimes/cxxstdlib:library_search_directory"],
+    }),
     format = {
         "cxxstdlib_library_search_path": "//runtimes/cxxstdlib:library_search_directory",
     },
@@ -1065,10 +1239,13 @@ cc_args(
     # The currently supported native Windows tuple selects static libc++. Name
     # it in the Bazel-owned default-library composition instead of relying on
     # a COFF .drectve section emitted by each consumer object.
-    args = [
-        "/clang:-Xlinker",
-        "/clang:/DEFAULTLIB:libc++.lib",
-    ],
+    args = select({
+        "//config:nostdlibxx_enabled": [],
+        "//conditions:default": [
+            "/clang:-Xlinker",
+            "/clang:/DEFAULTLIB:libc++.lib",
+        ],
+    }),
 )
 
 # Those are stubs since we link against static_runtime_libs / dynamic_runtime_libs.
@@ -1126,11 +1303,17 @@ cc_args(
 bzl_library(
     name = "resource_directory_args",
     srcs = ["resource_directory_args.bzl"],
-    deps = ["@rules_cc//cc/toolchains:toolchain_rules"],
+    deps = [
+        "@rules_cc//cc/toolchains:toolchain_rules",
+        "@rules_cc//cc/toolchains/impl:documented_api",
+    ],
 )
 
 bzl_library(
     name = "llvm_target_triple",
     srcs = ["llvm_target_triple.bzl"],
-    deps = ["//constraints/windows/abi:abis"],
+    deps = [
+        "//constraints/wasi:variants",
+        "//constraints/windows/abi:abis",
+    ],
 )
